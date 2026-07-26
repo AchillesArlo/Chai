@@ -35,7 +35,12 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${PROJECT_ROOT}/infra/production/docker-compose.yml"
 
 IMAGE_TAG="${IMAGE_TAG:-$(git -C "${PROJECT_ROOT}" rev-parse --short HEAD 2>/dev/null || echo 'latest')}"
+export IMAGE_TAG   # so `docker compose` substitutes ${IMAGE_TAG} in `image: chai:${IMAGE_TAG}`
 DOCKER_REGISTRY="${DOCKER_REGISTRY:-ghcr.io/chai-platform}"
+# One image, many entrypoints (see infra/Dockerfile + compose `image:`): a single
+# shared image is built, tagged and pushed — not one per service.
+IMAGE_NAME="${IMAGE_NAME:-chai}"
+LOCAL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 SKIP_BUILD=false
 SKIP_PUSH=false
 SKIP_MIGRATE=false
@@ -47,21 +52,8 @@ CURRENT_ENV="blue"
 NEXT_ENV="green"
 STATE_FILE="${PROJECT_ROOT}/.deployment-state"
 
-# Services to deploy
-SERVICES=(
-  "api"
-  "realtime-gateway"
-  "owner-console"
-  "client-portal"
-  "channel-worker"
-  "automation-worker"
-  "payment-worker"
-  "logistics-worker"
-  "analytics-worker"
-  "inbox-dispatcher"
-  "outbox-dispatcher"
-  "media-worker"
-)
+# Services roll-restarted in dependency order are named directly in Step 5.
+# There is no per-service image list: one shared image serves every service.
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -158,10 +150,8 @@ if [ "${ROLLBACK}" = true ]; then
   # Update IMAGE_TAG to previous version
   IMAGE_TAG="${TAG}"
   
-  # Pull previous images
-  for svc in "${SERVICES[@]}"; do
-    run "docker pull ${DOCKER_REGISTRY}/${svc}:${IMAGE_TAG}"
-  done
+  # Pull the previous (single, shared) image
+  run "docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
   
   # Redeploy with previous tag
   run "docker compose -f '${COMPOSE_FILE}' down"
@@ -199,11 +189,9 @@ if [ "${SKIP_BUILD}" = false ]; then
   log "=== Step 2/6: Building Docker images ==="
   run "docker compose -f '${COMPOSE_FILE}' build"
   
-  log "Tagging images with ${IMAGE_TAG}"
-  for svc in "${SERVICES[@]}"; do
-    run "docker tag chai-${svc}:latest ${DOCKER_REGISTRY}/${svc}:${IMAGE_TAG}"
-    run "docker tag chai-${svc}:latest ${DOCKER_REGISTRY}/${svc}:production-latest"
-  done
+  log "Tagging image ${LOCAL_IMAGE} for the registry"
+  run "docker tag ${LOCAL_IMAGE} ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+  run "docker tag ${LOCAL_IMAGE} ${DOCKER_REGISTRY}/${IMAGE_NAME}:production-latest"
 else
   log "=== Step 2/6: Skipping Docker build (--skip-build) ==="
 fi
@@ -213,10 +201,8 @@ fi
 # ---------------------------------------------------------------------------
 if [ "${SKIP_PUSH}" = false ]; then
   log "=== Step 3/6: Pushing images to registry ==="
-  for svc in "${SERVICES[@]}"; do
-    run "docker push ${DOCKER_REGISTRY}/${svc}:${IMAGE_TAG}"
-    run "docker push ${DOCKER_REGISTRY}/${svc}:production-latest"
-  done
+  run "docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+  run "docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:production-latest"
 else
   log "=== Step 3/6: Skipping push (--skip-push) ==="
 fi
@@ -233,9 +219,12 @@ if [ "${SKIP_MIGRATE}" = false ]; then
   run "docker compose -f '${COMPOSE_FILE}' exec -T postgres pg_dump -U ${POSTGRES_USER:-chai_admin} ${POSTGRES_DB:-chai} > '${BACKUP_FILE}'"
   log "Backup created: ${BACKUP_FILE}"
   
-  # Run migrations
+  # Run migrations via the dedicated one-shot `migrate` service — the real
+  # migration authority (`pnpm --filter @chai/database run migrate`). The API
+  # exposes no db:migrate:prod script; API and workers already gate on this
+  # service via depends_on: condition: service_completed_successfully.
   log "Executing migrations..."
-  run "docker compose -f '${COMPOSE_FILE}' exec -T api pnpm --filter @chai/api db:migrate:prod"
+  run "docker compose -f '${COMPOSE_FILE}' run --rm migrate"
   
   log "✓ Database migrations completed"
 else
@@ -265,7 +254,7 @@ sleep 10
 
 # Restart workers
 log "Restarting workers..."
-for worker in channel-worker automation-worker payment-worker logistics-worker analytics-worker inbox-dispatcher outbox-dispatcher media-worker; do
+for worker in channel-worker automation-worker payment-worker logistics-worker analytics-worker inbox-dispatcher outbox-dispatcher; do
   log "  Restarting ${worker}..."
   run "docker compose -f '${COMPOSE_FILE}' up -d --no-deps ${worker}"
   sleep 5

@@ -114,7 +114,7 @@ Workers "kecil" itu **pure-function module + runner terpisah**, pola yang benar:
 | Worker | Bentuk | Bukti |
 |---|---|---|
 | channel-worker | Runner nyata | `workers/channel-worker/src/main.ts:1-62`: baca `DATABASE_URL`, parse tenant roster, lease 30s, retry backoff 5s, maxAttempts 5, graceful SIGTERM. Memanggil `runInboxDispatcher` dari `@chai/worker-inbox-dispatcher` |
-| inbox-dispatcher | 5234 bytes | Channel ingest → conversation flow ter-wiring |
+| inbox-dispatcher | 5234 bytes | Loop nyata (lease/retry/roster DB); **handler `process()` no-op pada commit ca2e922** — `workers/inbox-dispatcher/src/main.ts` hanya `return 'processed'`, jadi channel-ingest → conversation flow BELUM ter-wiring di baseline itu (koreksi 27 Jul 2026; wiring handler sedang dikerjakan terpisah) |
 | outbox-dispatcher | 5148 bytes | Outbox pattern nyata |
 | automation-worker | 11000+ bytes | Substansial |
 | temporal | 20069 bytes | Workflow orchestration |

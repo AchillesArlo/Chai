@@ -6,7 +6,7 @@ Platform omnichannel AI multi-tenant: satu inbox untuk percakapan pelanggan lint
 
 ## Arsitektur
 
-Monorepo pnpm + Turborepo, TypeScript strict, Node 24.
+Monorepo pnpm + Turborepo, TypeScript strict, Node 24 (engine `>=24.12 <25`), pnpm 11.13.1.
 
 | Bagian | Isi |
 |---|---|
@@ -16,9 +16,9 @@ Monorepo pnpm + Turborepo, TypeScript strict, Node 24.
 | `apps/realtime-gateway` | Fastify + SSE. Stream ber-tenant dengan replay `Last-Event-ID`. |
 | `services/ai-gateway` | Adapter model, guardrail, RAG, tool execution, dan budget cap. |
 | `workers/*` | Dispatcher outbox dan inbox, plus worker channel, payment, logistics, analytics, automation, media, dan Temporal. |
-| `packages/*` | `contracts` (skema Zod), `auth`, `database` (SQL mentah + RLS), `domain`, `connectors`, `connector-sdk`, `ui`, `api-client`, `auth-client`, `testkit`. |
+| `packages/*` | `contracts` (skema Zod), `auth`, `database` (SQL mentah + RLS), `domain`, `connectors`, `connector-sdk`, `broker` (Redis Streams: publisher + consumer group untuk outbox), `ui`, `api-client`, `auth-client`, `testkit`. |
 
-Basis data adalah **PostgreSQL** dengan **migrasi SQL mentah** (46 berkas di `packages/database/migrations`) dan **RLS default-deny** pada setiap tabel ber-tenant. Tidak ada Prisma, MongoDB, MySQL, maupun SQLite.
+Basis data adalah **PostgreSQL** dengan **migrasi SQL mentah** (50 berkas di `packages/database/migrations`, dijalankan runner `@chai/database` lewat `pnpm migrate` dan dicatat di ledger `0048_schema_migration_ledger.sql`) dan **RLS default-deny** pada setiap tabel ber-tenant. Tidak ada Prisma, MongoDB, MySQL, maupun SQLite.
 
 ## Invarian yang tidak boleh dilanggar
 
@@ -36,7 +36,7 @@ Ini bukan preferensi gaya; melanggarnya adalah bug rilis.
 
 ```bash
 pnpm install
-pnpm run typecheck        # 24 paket
+pnpm run typecheck        # 25 paket
 pnpm run lint             # termasuk guard boundary impor
 pnpm run test             # unit + tes boundary
 ```

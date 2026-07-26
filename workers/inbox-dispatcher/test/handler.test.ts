@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { createChannelIngestHandler } from '../src/index';
+import { createInboxHandler } from '../src/main';
 
-describe('channel worker handler', () => {
+describe('inbox dispatcher deployed handler', () => {
   it('refuses to ack an unprocessed inbox event (retry, never a silent no-op)', async () => {
-    const handler = createChannelIngestHandler();
+    const handler = createInboxHandler();
     const result = await handler.process({
       attempts: 0,
       externalEventId: 'ext-1',
@@ -16,8 +16,8 @@ describe('channel worker handler', () => {
       tenantId: 'tenant-1',
     });
     // Domain ingest is applied inline at the API edge and this worker has no
-    // payload store to re-run it, so it must NOT mark the event 'processed'.
-    // 'retry' routes a stray event to the dispatcher's DEAD_LETTER path.
+    // payload store to re-run it, so the deployed handler must NOT mark the event
+    // 'processed'. 'retry' routes a stray event to the DEAD_LETTER path.
     expect(result).toBe('retry');
     expect(result).not.toBe('processed');
   });

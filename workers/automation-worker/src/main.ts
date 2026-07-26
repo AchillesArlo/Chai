@@ -1,15 +1,36 @@
 import { createDatabase, runWithTenantRoster } from '@chai/database';
-import { runInboxDispatcher } from '@chai/worker-inbox-dispatcher';
 
-import { createFollowUpHandler } from './index';
+import { runAutomationWorker } from './runner';
+import type { FollowUpJob } from './types';
 
 /**
  * Automation worker entrypoint.
  *
- * The roster loop lives in `@chai/database` so every worker gets identical
- * semantics: live roster from the database, fail-hard on the first read, and a
- * failed refresh that keeps serving the last known roster.
+ * Runs the REAL follow-up job loop (`runAutomationWorker`) per tenant against the
+ * live roster, replacing the inbox no-op that used to leave `chai.follow_up_job`
+ * rows PENDING forever. The roster loop lives in `@chai/database` so every worker
+ * gets identical semantics: live roster from the database, fail-hard on the first
+ * read, and a failed refresh that keeps serving the last known roster.
  */
+
+/**
+ * Deployed follow-up handler.
+ *
+ * The follow-up SEND action — re-check state / consent / messaging window /
+ * expected version, then enqueue the outbox message — is not implemented yet
+ * (S2-4). This handler therefore FAILS each claimed job with a clear reason
+ * instead of completing it: `runAutomationWorker` records the reason in
+ * `follow_up_job.last_error` and the job lands in FAILED, where it is visible for
+ * reconciliation. Marking un-sent work DONE would be the "acked but dropped" bug
+ * this worker is fixing, so a real effect is never fabricated here.
+ */
+export const executeFollowUp = async (job: FollowUpJob): Promise<void> => {
+  throw new Error(
+    `follow-up execution not implemented (S2-4): refusing to mark job ${job.id} ` +
+      'DONE without re-checking consent/window/version and enqueuing the send',
+  );
+};
+
 async function main(): Promise<void> {
   const databaseUrl = requiredEnv('DATABASE_URL');
   const pollIntervalMs = positiveIntEnv('AUTOMATION_POLL_INTERVAL_MS', 1_000);
@@ -23,20 +44,22 @@ async function main(): Promise<void> {
       name: 'automation-worker',
       obsoleteRosterEnv: 'AUTOMATION_TENANT_ROSTER',
       refreshMs,
+      // `runAutomationWorker` owns one tenant's job loop; the roster fans it over
+      // every ACTIVE tenant and the window signal ends each pass on shutdown or a
+      // roster refresh.
+      // ponytail: one polling loop per tenant shares the connection pool (max 10);
+      // a very large roster would want a single interleaved loop instead.
       run: ({ signal, tenants }) =>
-        runInboxDispatcher({
-          database,
-          handler: createFollowUpHandler(),
-          options: {
-            leaseMs: 30_000,
-            limit: 50,
-            maxAttempts: 5,
-            pollIntervalMs,
-            retryBackoffMs: 5_000,
-          },
-          signal,
-          tenants,
-        }),
+        Promise.all(
+          tenants.map((tenant) =>
+            runAutomationWorker(database, {
+              handler: executeFollowUp,
+              intervalMs: pollIntervalMs,
+              signal,
+              tenantId: tenant.tenantId,
+            }),
+          ),
+        ).then(() => undefined),
       signal: shutdownSignal(),
     });
   } finally {
@@ -70,7 +93,10 @@ function shutdownSignal(): AbortSignal {
   return controller.signal;
 }
 
-void main().catch((error) => {
-  console.error('automation worker failed', error);
-  process.exitCode = 1;
-});
+// ponytail: skip main when vitest (or any importer) loads this module.
+if (process.env.VITEST === undefined) {
+  void main().catch((error) => {
+    console.error('automation worker failed', error);
+    process.exitCode = 1;
+  });
+}

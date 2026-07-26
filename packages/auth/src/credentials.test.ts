@@ -11,8 +11,8 @@ import {
   type CredentialLookupResult,
   type CredentialStore,
   type LockoutOutcome,
-  type Principal,
-} from './index';
+} from './server';
+import type { Principal } from './index';
 const USER_ID = '01890f47-9b3c-7cc2-98e8-1234567890aa';
 const TENANT_ID = '01890f47-9b3c-7cc2-98e8-1234567890bb';
 

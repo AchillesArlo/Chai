@@ -1,12 +1,14 @@
 import {
   type Audience,
+} from '@chai/auth';
+import {
   computeLockedUntil,
   type CredentialLookupResult,
   type CredentialRecord,
   type CredentialStore,
   hashPasswordScrypt,
   type LockoutOutcome,
-} from '@chai/auth';
+} from '@chai/auth/server';
 
 import { API_CLIENT_AGENT_ID, API_CLIENT_OWNER_ID, API_TENANT_ID } from '../database/api-ids';
 import type { MfaOperations, TotpFactorState } from './mfa-store';

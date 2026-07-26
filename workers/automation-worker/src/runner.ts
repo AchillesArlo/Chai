@@ -16,9 +16,10 @@ export async function runAutomationWorker(
   const maxIterations = options.maxIterations ?? Number.POSITIVE_INFINITY;
   const handler = options.handler ?? DEFAULT_HANDLER;
   const now = options.now ?? (() => new Date());
+  const signal = options.signal;
 
   let iteration = 0;
-  for (;;) {
+  while (!signal?.aborted) {
     iteration += 1;
     await withTenantTransaction(
       database,
@@ -37,10 +38,24 @@ export async function runAutomationWorker(
     );
 
     if (iteration >= maxIterations) return;
-    await sleep(intervalMs);
+    await sleep(intervalMs, signal);
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
 }

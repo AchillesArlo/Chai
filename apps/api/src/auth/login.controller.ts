@@ -11,16 +11,11 @@ import {
 import type { FastifyRequest } from 'fastify';
 
 import {
-  type Audience,
-  type ClientRole,
-  authenticateCredentials,
-  extractBearerToken,
-  type MfaState,
-  verifyAccessToken,
-  verifyRefreshToken,
-  type Principal,
-  type TokenConfig,
+  type Audience,   type ClientRole,   extractBearerToken,   type MfaState,   verifyAccessToken,   verifyRefreshToken,   type Principal,   type TokenConfig,
 } from '@chai/auth';
+import {
+  authenticateCredentials,
+} from '@chai/auth/server';
 import {
   LoginRequestSchema,
   RefreshRequestSchema,

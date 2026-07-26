@@ -5,13 +5,13 @@ import {
   type Principal,
   decodeTokenUnsafe,
   extractBearerToken,
-  hashPassword,
   verifyAccessToken,
-  verifyPassword,
   verifyRefreshToken,
   issueTokens,
   type TokenConfig,
 } from './index';
+// Password hashing needs node:crypto, so it lives behind the server subpath.
+import { hashPassword, verifyPassword } from './server';
 
 const NOW = 1_700_000_000;
 

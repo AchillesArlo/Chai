@@ -2,7 +2,9 @@ import rateLimit from '@fastify/rate-limit';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
-import { normalizeEmail } from '@chai/auth';
+import {
+  normalizeEmail,
+} from '@chai/auth/server';
 
 /**
  * Rate limiting for the auth surface.

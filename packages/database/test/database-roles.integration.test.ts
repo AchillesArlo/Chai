@@ -68,29 +68,100 @@ describe('database role harness', () => {
     expect(inject('analyticsDatabaseUrl')).toMatch(
       /^postgres(?:ql)?:\/\/chai_analytics_reader:/,
     );
+    // The production connection path: LOGIN roles, not the admin/superuser.
+    expect(inject('apiLoginDatabaseUrl')).toMatch(
+      /^postgres(?:ql)?:\/\/chai_api:/,
+    );
+    expect(inject('workerLoginDatabaseUrl')).toMatch(
+      /^postgres(?:ql)?:\/\/chai_worker:/,
+    );
   });
 
-  it('keeps every production role unable to bypass RLS', async () => {
+  it('keeps every production role NOSUPERUSER and NOBYPASSRLS', async () => {
     const admin = postgres(inject('adminDatabaseUrl'), { max: 1 });
 
     try {
-      const roles = await admin<{ rolbypassrls: boolean; rolname: string }[]>`
-        SELECT rolname, rolbypassrls
+      const roles = await admin<
+        { rolbypassrls: boolean; rolname: string; rolsuper: boolean }[]
+      >`
+        SELECT rolname, rolsuper, rolbypassrls
         FROM pg_roles
         WHERE rolname IN (
-          'chai_migration_owner',
+          'chai_analytics_reader',
+          'chai_api',
           'chai_app_runtime',
-          'chai_worker_runtime',
-          'chai_analytics_reader'
+          'chai_migration_owner',
+          'chai_worker',
+          'chai_worker_runtime'
         )
         ORDER BY rolname
       `;
 
+      // Every Chai role -- the group roles AND the LOGIN roles the runtime
+      // actually connects on -- must be unable to bypass RLS AND must not be a
+      // superuser. This is the C2 regression guard: if a future change points a
+      // runtime connection back at a superuser/bypassrls role (the original
+      // blocker), this assertion fails loudly.
       expect(roles).toEqual([
-        { rolbypassrls: false, rolname: 'chai_analytics_reader' },
-        { rolbypassrls: false, rolname: 'chai_app_runtime' },
-        { rolbypassrls: false, rolname: 'chai_migration_owner' },
-        { rolbypassrls: false, rolname: 'chai_worker_runtime' },
+        {
+          rolbypassrls: false,
+          rolname: 'chai_analytics_reader',
+          rolsuper: false,
+        },
+        { rolbypassrls: false, rolname: 'chai_api', rolsuper: false },
+        { rolbypassrls: false, rolname: 'chai_app_runtime', rolsuper: false },
+        {
+          rolbypassrls: false,
+          rolname: 'chai_migration_owner',
+          rolsuper: false,
+        },
+        { rolbypassrls: false, rolname: 'chai_worker', rolsuper: false },
+        {
+          rolbypassrls: false,
+          rolname: 'chai_worker_runtime',
+          rolsuper: false,
+        },
+      ]);
+    } finally {
+      await admin.end();
+    }
+  });
+
+  it('wires each runtime login role into its group role with inheritance', async () => {
+    const admin = postgres(inject('adminDatabaseUrl'), { max: 1 });
+
+    try {
+      // pg_auth_members.inherit_option (PG16+) proves the login role uses its
+      // group's object GRANTs automatically, so no SET ROLE is needed in app
+      // code. Role ATTRIBUTES are never inherited, so chai_api stays NOBYPASSRLS
+      // regardless of the group definition (asserted above).
+      const memberships = await admin<
+        { group_role: string; inherit_option: boolean; member: string }[]
+      >`
+        SELECT
+          member_role.rolname AS member,
+          group_role.rolname AS group_role,
+          pg_auth_members.inherit_option
+        FROM pg_auth_members
+        JOIN pg_roles AS member_role
+          ON member_role.oid = pg_auth_members.member
+        JOIN pg_roles AS group_role
+          ON group_role.oid = pg_auth_members.roleid
+        WHERE member_role.rolname IN ('chai_api', 'chai_worker')
+        ORDER BY member_role.rolname
+      `;
+
+      expect(memberships).toEqual([
+        {
+          group_role: 'chai_app_runtime',
+          inherit_option: true,
+          member: 'chai_api',
+        },
+        {
+          group_role: 'chai_worker_runtime',
+          inherit_option: true,
+          member: 'chai_worker',
+        },
       ]);
     } finally {
       await admin.end();

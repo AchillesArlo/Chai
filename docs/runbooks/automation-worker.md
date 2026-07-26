@@ -5,8 +5,12 @@
 
 ## Overview
 
-The automation worker drains `chai.follow_up_job` for the tenants listed in
-`AUTOMATION_TENANT_ROSTER`. Each poll (default `AUTOMATION_POLL_INTERVAL_MS=1000`):
+The automation worker drains `chai.follow_up_job` for the tenants in the live
+roster from `chai.active_tenant_roster()` (re-read each cycle, so a newly
+activated tenant is picked up without a redeploy). The legacy
+`AUTOMATION_TENANT_ROSTER` env is **obsolete and rejected at startup** — setting
+it makes the worker throw (`packages/database/src/tenant-roster-loop.ts`). Each
+poll (default `AUTOMATION_POLL_INTERVAL_MS=1000`):
 
 1. `claimDueJobs` — `UPDATE ... SET status='CLAIMED'` for `PENDING` rows whose
    `due_at <= now()`, ordered by `due_at`, `FOR UPDATE SKIP LOCKED`.
@@ -25,7 +29,7 @@ manually reset; PENDING is the retry path).
   follow-up never fires and the row sits in CLAIMED past `due_at`.
 - **FAILED exhaustion** — `attempt >= max_attempts`; handler keeps throwing.
   `last_error` holds the most recent message. Terminal without operator action.
-- **Runner not draining** — pod down, wrong `AUTOMATION_TENANT_ROSTER`, or DB
+- **Runner not draining** — pod down, an empty active-tenant roster, or DB
   connectivity lost. PENDING backlog climbs, `due_at` ages.
 - **Handler no-op** — `# ponytail:` the default handler logs and completes
   without side effects until S2-4 AI tool wiring lands. A DONE job that did
@@ -66,7 +70,7 @@ LIMIT 50;
 ```
 
 Confirm the runner is alive: process up, logs show `automation worker` polling,
-`AUTOMATION_TENANT_ROSTER` env contains the affected `tenant_id`.
+and the affected `tenant_id` is ACTIVE in `chai.active_tenant_roster()`.
 
 ## Recovery
 

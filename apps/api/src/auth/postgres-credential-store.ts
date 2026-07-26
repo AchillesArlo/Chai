@@ -1,17 +1,15 @@
 import { v7 as uuidv7 } from 'uuid';
 
 import {
-  type Audience,
-  type ClientRole,
+  type Audience,   type ClientRole,   type MembershipStatus,   type Principal,   type PrincipalStatus,
+} from '@chai/auth';
+import {
   computeLockedUntil,
   type CredentialLookupResult,
   DEFAULT_LOCKOUT_POLICY,
-  type MembershipStatus,
-  type Principal,
-  type PrincipalStatus,
   type CredentialStore,
   type LockoutOutcome,
-} from '@chai/auth';
+} from '@chai/auth/server';
 import {
   type Database,
   withPrincipalTransaction,

@@ -21,7 +21,7 @@ This document outlines the production-ready deployment configurations for the Ch
 
 ### Software Requirements
 
-- Node.js 20+ and pnpm
+- Node.js `>=24.12 <25` (see root `package.json` `engines`) and pnpm 11.13.1
 - PostgreSQL 17.6+
 - Redis 7.4+
 - TLS certificates (Let's Encrypt or commercial)
@@ -31,7 +31,7 @@ This document outlines the production-ready deployment configurations for the Ch
 - Docker registry authentication
 - Server SSH access with deployment user
 - Database credentials
-- External service API keys (Twilio, Stripe, etc.)
+- Connector credentials for any non-mock providers (WhatsApp Meta, Midtrans, JNE, OpenAI/Anthropic, Google Calendar)
 
 ## Architecture Overview
 
@@ -168,9 +168,12 @@ nano infra/staging/.env
 **Required variables**:
 - `POSTGRES_PASSWORD`: Strong random password
 - `REDIS_PASSWORD`: Strong random password
-- `JWT_SECRET`: 64-character random string
-- `ENCRYPTION_KEY`: 64-character random string
-- External service credentials (Twilio, Stripe, etc.)
+- `AUTH_TOKEN_SECRET`: shared token-signing secret, **minimum 32 characters**.
+  `apps/api` and `apps/realtime-gateway` throw at startup in production if it is
+  unset or shorter (`apps/api/src/auth/token-config.ts`); use the same value
+  across api, realtime-gateway, and client-portal.
+- Connector credentials only for providers you switch off mock (see `PROVIDER_*`
+  in `.env.example`); every connector defaults to a safe mock.
 
 ### 2. Deploy to Staging
 
@@ -287,8 +290,11 @@ open https://grafana.chai.example.com
 # Review logs
 docker compose -f infra/production/docker-compose.yml logs -f api
 
-# Verify database migrations
-docker compose -f infra/production/docker-compose.yml exec api pnpm --filter @chai/api db:migrate:status
+# Verify database migrations. They are applied by the one-shot `migrate` service
+# (`pnpm --filter @chai/database run migrate`) BEFORE api/workers start and
+# recorded in the ledger from migration 0048_schema_migration_ledger.sql. There
+# is no `db:migrate:status` script — inspect the migrate service instead:
+docker compose -f infra/production/docker-compose.yml logs migrate
 ```
 
 ### 5. Configure Monitoring
@@ -334,8 +340,8 @@ If migrations need to be reverted:
 # Restore from backup
 docker compose -f infra/production/docker-compose.yml exec -T postgres psql -U chai_admin chai < /tmp/chai-backup-YYYYMMDD-HHMMSS.sql
 
-# Or use migration rollback
-docker compose -f infra/production/docker-compose.yml exec api pnpm --filter @chai/api db:migrate:down
+# The raw-SQL migrations are forward-only — there is no `db:migrate:down`.
+# Roll back schema changes by restoring the pre-deploy backup taken above.
 ```
 
 ## Troubleshooting Guide
@@ -370,8 +376,9 @@ docker compose -f infra/production/docker-compose.yml ps
 # Test database connection
 docker compose -f infra/production/docker-compose.yml exec postgres pg_isready -U chai_admin -d chai
 
-# Check connection pool
-docker compose -f infra/production/docker-compose.yml exec api pnpm --filter @chai/api db:pool:status
+# Inspect active connections (there is no `db:pool:status` script)
+docker compose -f infra/production/docker-compose.yml exec postgres \
+  psql -U chai_admin -d chai -c "SELECT count(*), state FROM pg_stat_activity GROUP BY state;"
 
 # Review PostgreSQL logs
 docker compose -f infra/production/docker-compose.yml logs postgres

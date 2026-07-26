@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import Fastify from 'fastify';
 
 import type { TokenConfig } from '@chai/auth';
-import { startTelemetry } from '@chai/domain';
+import { createDatabase, type Database } from '@chai/database';
+import { PostgresRealtimeEventStore, startTelemetry } from '@chai/domain';
 import type { ServerSentEvent } from '@chai/contracts';
 
 import {
@@ -162,6 +163,43 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
+/**
+ * Platform service principal. `chai.realtime_event` RLS keys off `tenant_id`
+ * (migration 0042), so the store's principal only has to be a valid actor id for
+ * the tenant-scoped transaction, not a per-tenant identity. Overridable in case
+ * that identity is rotated.
+ */
+const PLATFORM_SERVICE_PRINCIPAL_ID = '01890f47-9b3c-7cc2-98e8-1234567892ff';
+
+/**
+ * Chooses the replay-window store from the environment.
+ *
+ * Production MUST use the Postgres-backed window: it is shared across replicas
+ * and survives a restart, neither of which the in-memory store does. Silently
+ * falling back to in-memory when DATABASE_URL is missing would repeat the exact
+ * "acked but dropped" bug being fixed — the process would look healthy while
+ * serving a per-replica history that disappears on restart. So a missing
+ * DATABASE_URL is fatal here; the in-memory `EventStore` stays available only to
+ * tests that build the gateway directly with `eventStore`.
+ */
+export function resolveEventStore(env: NodeJS.ProcessEnv): {
+  database: Database;
+  store: RealtimeEventStore;
+} {
+  const databaseUrl = env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error(
+      'DATABASE_URL is required: the realtime gateway must use the shared ' +
+        'PostgresRealtimeEventStore. The in-memory store is not shared across ' +
+        'replicas and loses the replay window on restart.',
+    );
+  }
+  const database = createDatabase(databaseUrl);
+  const principalId =
+    env.REALTIME_SERVICE_PRINCIPAL_ID ?? PLATFORM_SERVICE_PRINCIPAL_ID;
+  return { database, store: new PostgresRealtimeEventStore(database, principalId) };
+}
+
 async function main(): Promise<void> {
   const telemetry = startTelemetry({
     environment: process.env.APP_ENV ?? 'production',
@@ -170,10 +208,14 @@ async function main(): Promise<void> {
     serviceVersion: process.env.APP_VERSION ?? '0.0.0',
   });
   const port = Number.parseInt(process.env.REALTIME_PORT ?? '3010', 10);
-  const app = createRealtimeGateway();
+  const { database, store } = resolveEventStore(process.env);
+  const app = createRealtimeGateway({ eventStore: store });
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.once(signal, () => {
-      void telemetry.shutdown().finally(() => app.close());
+      void telemetry
+        .shutdown()
+        .finally(() => app.close())
+        .finally(() => database.end());
     });
   }
   await app.listen({ host: '0.0.0.0', port });

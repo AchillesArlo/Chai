@@ -28,4 +28,6 @@ export interface RunAutomationWorkerOptions {
   maxIterations?: number;
   handler?: (job: FollowUpJob) => Promise<void>;
   now?: () => Date;
+  /** Ends the loop when aborted (roster window boundary / shutdown). */
+  signal?: AbortSignal;
 }

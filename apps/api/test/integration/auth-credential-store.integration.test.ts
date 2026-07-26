@@ -5,7 +5,7 @@ import {
   generateTotpSecret,
   hashPasswordScrypt,
   verifyPasswordHash,
-} from '@chai/auth';
+} from '@chai/auth/server';
 import { createDatabase } from '@chai/database';
 
 import { InMemoryCredentialStore } from '../../src/auth/credential-store';

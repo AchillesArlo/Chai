@@ -72,6 +72,13 @@ services:
   # `pnpm --filter @chai/database run migrate`. Because this now owns schema
   # setup, the postgres /docker-entrypoint-initdb.d migrations mount was removed
   # so migrations are not also applied out-of-band on first boot.
+  #
+  # This is the ONLY chai service that connects as POSTGRES_USER (owner/superuser)
+  # — its job is DDL: schema, roles, and RLS policies. Every RUNTIME service
+  # below connects as a NOBYPASSRLS LOGIN role (chai_api / chai_worker, created by
+  # migration 0051) so RLS is enforced on the app/worker path. (The temporal
+  # auto-setup service keeps POSTGRES_USER for its OWN store, which is not a chai
+  # RLS table.)
   migrate:
     build:
       context: ../..
@@ -100,7 +107,7 @@ services:
       NODE_ENV: staging
       APP_ENV: staging
       PORT: 3000
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_api:${CHAI_API_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENABLE_METRICS: "true"
@@ -176,7 +183,7 @@ services:
     command: ["pnpm", "--filter", "@chai/worker-channel-worker", "start"]
     environment:
       NODE_ENV: staging
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_worker:${CHAI_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WORKER_CONCURRENCY: ${CHANNEL_WORKER_CONCURRENCY:-5}
@@ -213,7 +220,7 @@ services:
     command: ["pnpm", "--filter", "@chai/worker-automation-worker", "start"]
     environment:
       NODE_ENV: staging
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_worker:${CHAI_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WORKER_CONCURRENCY: ${AUTOMATION_WORKER_CONCURRENCY:-3}
@@ -264,7 +271,7 @@ services:
     command: ["pnpm", "--filter", "@chai/worker-analytics-worker", "start"]
     environment:
       NODE_ENV: staging
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_worker:${CHAI_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WORKER_CONCURRENCY: ${ANALYTICS_WORKER_CONCURRENCY:-2}
@@ -302,7 +309,7 @@ services:
     command: ["pnpm", "--filter", "@chai/worker-inbox-dispatcher", "start"]
     environment:
       NODE_ENV: staging
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_worker:${CHAI_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
@@ -338,7 +345,7 @@ services:
     command: ["pnpm", "--filter", "@chai/worker-outbox-dispatcher", "start"]
     environment:
       NODE_ENV: staging
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_worker:${CHAI_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
@@ -444,7 +451,7 @@ services:
       NODE_ENV: staging
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_NAMESPACE: default
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_worker:${CHAI_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:

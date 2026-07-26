@@ -22,17 +22,20 @@ node scripts/seed-pilot-data.ts
 ```
 
 ### Step 3: Launch Services & Workers
-```bash
-# Start API & Realtime Gateway
-pnpm --filter @chai/api start
-pnpm --filter @chai/realtime-gateway start
 
-# Start Dispatcher & Connector Workers
-pnpm --filter @chai/worker-outbox-dispatcher start
-pnpm --filter @chai/worker-inbox-dispatcher start
-pnpm --filter @chai/worker-channel-worker start
-pnpm --filter @chai/worker-payment-worker start
-pnpm --filter @chai/worker-logistics-worker start
+Bring the whole stack up through Docker Compose. This runs the one-shot
+`migrate` service first (raw-SQL migrations), then the API, realtime gateway,
+workers, and frontends with their health checks and per-service env
+(`DATABASE_URL`, `REDIS_URL`, `AUTH_TOKEN_SECRET`, …). Do **not** `pnpm start`
+services on the host: that bypasses migrations and the container env, and the
+API refuses to boot without a valid `AUTH_TOKEN_SECRET`.
+
+```bash
+# From repo root, with infra/production/.env populated from .env.example
+docker compose -f infra/production/docker-compose.yml up -d
+
+# Follow rollout and confirm migrations applied cleanly
+docker compose -f infra/production/docker-compose.yml logs -f migrate api
 ```
 
 ### Step 4: Run 72-Hour Soak Verification (S9)
@@ -50,12 +53,19 @@ The platform supports a 3-tier runtime Kill Switch (`KillSwitchRuntime`):
 3. **Database Flag:** Per-tenant disable in DB `tenancy.features`
 
 ### Triggering Provider Kill-Switch (CLI)
-```bash
-# Disable Midtrans Payment Connector
-export KILL_SWITCH_PAYMENT_MIDTRANS=true
 
-# Disable WhatsApp Meta Connector
-export KILL_SWITCH_CHANNEL_WHATSAPP_META=true
+The env switch is per provider CLASS, not per vendor. `KillSwitchRuntime` reads
+`KILL_SWITCH_<PROVIDER>` where `<PROVIDER>` is one of `PAYMENT`, `CHANNEL`,
+`LOGISTICS`, `CALENDAR`, and trips on `1` or `true`
+(`packages/connectors/src/kill-switch.ts:58`). There is no per-vendor suffix —
+e.g. `KILL_SWITCH_PAYMENT_MIDTRANS` is never read.
+
+```bash
+# Disable ALL payment connectors (e.g. Midtrans)
+export KILL_SWITCH_PAYMENT=true
+
+# Disable ALL channel connectors (e.g. WhatsApp Meta)
+export KILL_SWITCH_CHANNEL=true
 ```
 
 ---

@@ -1,4 +1,4 @@
-import type { CredentialStore as AuthCredentialStore } from '@chai/auth';
+import type { CredentialStore as AuthCredentialStore } from '@chai/auth/server';
 
 import type { DatabaseHandle } from '../database/database.module';
 import { InMemoryCredentialStore } from './credential-store';

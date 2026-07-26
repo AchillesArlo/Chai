@@ -1,6 +1,20 @@
 # Chai Production Environment
 # High-availability deployment with monitoring and logging
 # Usage: docker compose -f infra/production/docker-compose.yml up -d
+#
+# DEPLOYMENT MODEL — single-node Docker Compose (NOT Swarm), chosen deliberately.
+# This file is driven by `docker compose up -d`, never `docker stack deploy`.
+# Rationale: it relies on `build:` contexts, `depends_on` conditions
+# (service_healthy / service_completed_successfully) and top-level `restart:` —
+# all of which Swarm ignores. Verified on Docker Compose v2 (Docker 28.x):
+# `docker compose up` DOES honour `deploy.replicas` and `deploy.resources.limits`
+# (proven — replicas:3 started 3 containers, a 128M limit was applied), so the
+# `deploy:` blocks below are effective under `up`, not dead Swarm-only config.
+#
+# ONE IMAGE, MANY ENTRYPOINTS — every app service builds and runs the same
+# `chai:${IMAGE_TAG:-latest}` image (see infra/Dockerfile) and differs only by
+# `command:`. Compose builds it once and reuses it; scripts/production/deploy.sh
+# tags and pushes that single image.
 
 services:
   # ============================================================================
@@ -103,7 +117,15 @@ services:
   # `pnpm --filter @chai/database run migrate`. Because this now owns schema
   # setup, the postgres /docker-entrypoint-initdb.d migrations mount was removed
   # so migrations are not also applied out-of-band on first boot.
+  #
+  # This is the ONLY service that connects as POSTGRES_USER (the owner/superuser)
+  # — migrations create/alter schema, roles, and RLS policies, which is exactly
+  # the owner's job. Every RUNTIME service below connects as a NOBYPASSRLS LOGIN
+  # role (chai_api / chai_worker, created by migration 0051) so RLS is enforced
+  # on the app/worker path. A superuser on the runtime path silently bypasses RLS
+  # (FORCE RLS does not apply to it) and breaks tenant isolation — the C2 blocker.
   migrate:
+    image: chai:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: infra/Dockerfile
@@ -123,6 +145,7 @@ services:
   # ============================================================================
 
   api:
+    image: chai:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: infra/Dockerfile
@@ -131,7 +154,7 @@ services:
       NODE_ENV: production
       APP_ENV: production
       PORT: 3000
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_api:${CHAI_API_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis-master:6379
       REDIS_SENTINELS: redis-sentinel-0:26379,redis-sentinel-1:26379,redis-sentinel-2:26379
       REDIS_SENTINEL_NAME: chai-master
@@ -169,6 +192,7 @@ services:
       - monitoring
 
   realtime-gateway:
+    image: chai:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: infra/Dockerfile
@@ -206,15 +230,27 @@ services:
   # ============================================================================
   # Worker Services
   # ============================================================================
+  #
+  # Worker healthchecks use `pgrep -f <name>`, which matches the container's
+  # PID 1 — the `pnpm --filter @chai/worker-<name> start` supervisor, whose argv
+  # carries the unique worker name (verified in-image). This is a LIVENESS probe
+  # only: it proves the supervisor is running, and since the supervisor forks
+  # `node … src/main.ts` and exits when that runtime dies (stopping the
+  # container), it does track the worker being alive. It CANNOT detect a
+  # hung-but-alive worker. A true readiness probe would require the worker to
+  # expose a health signal (HTTP endpoint or heartbeat); that is worker source
+  # code and out of scope for this infra file, and the workers expose no HTTP
+  # port, so pgrep is the strongest signal available without changing them.
 
   channel-worker:
+    image: chai:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: infra/Dockerfile
     command: ["pnpm", "--filter", "@chai/worker-channel-worker", "start"]
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_worker:${CHAI_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis-master:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WORKER_CONCURRENCY: ${CHANNEL_WORKER_CONCURRENCY:-10}
@@ -247,13 +283,14 @@ services:
       - monitoring
 
   automation-worker:
+    image: chai:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: infra/Dockerfile
     command: ["pnpm", "--filter", "@chai/worker-automation-worker", "start"]
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_worker:${CHAI_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis-master:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WORKER_CONCURRENCY: ${AUTOMATION_WORKER_CONCURRENCY:-5}
@@ -300,13 +337,14 @@ services:
   # --------------------------------------------------------------------------
 
   analytics-worker:
+    image: chai:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: infra/Dockerfile
     command: ["pnpm", "--filter", "@chai/worker-analytics-worker", "start"]
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_worker:${CHAI_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis-master:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WORKER_CONCURRENCY: ${ANALYTICS_WORKER_CONCURRENCY:-3}
@@ -343,13 +381,14 @@ services:
   # outcomes through the shared transition machine. Single replica by design —
   # concurrent reconcilers would contend on the same FOR UPDATE rows for no gain.
   payment-worker:
+    image: chai:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: infra/Dockerfile
     command: ["pnpm", "--filter", "@chai/worker-payment-worker", "start"]
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_worker:${CHAI_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       PROVIDER_PAYMENT: ${PROVIDER_PAYMENT:-mock}
       PAYMENT_POLL_INTERVAL_MS: ${PAYMENT_POLL_INTERVAL_MS:-15000}
@@ -383,13 +422,14 @@ services:
   # Carrier tracking fallback: re-polls shipments whose last sync exceeded the
   # SLA and appends deduplicated tracking events.
   logistics-worker:
+    image: chai:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: infra/Dockerfile
     command: ["pnpm", "--filter", "@chai/worker-logistics-worker", "start"]
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_worker:${CHAI_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       PROVIDER_LOGISTICS: ${PROVIDER_LOGISTICS:-mock}
       LOGISTICS_POLL_INTERVAL_MS: ${LOGISTICS_POLL_INTERVAL_MS:-30000}
@@ -422,13 +462,14 @@ services:
       - monitoring
 
   inbox-dispatcher:
+    image: chai:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: infra/Dockerfile
     command: ["pnpm", "--filter", "@chai/worker-inbox-dispatcher", "start"]
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_worker:${CHAI_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis-master:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENABLE_METRICS: "true"
@@ -460,13 +501,14 @@ services:
       - monitoring
 
   outbox-dispatcher:
+    image: chai:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: infra/Dockerfile
     command: ["pnpm", "--filter", "@chai/worker-outbox-dispatcher", "start"]
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      DATABASE_URL: postgres://chai_worker:${CHAI_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis-master:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENABLE_METRICS: "true"
@@ -505,6 +547,7 @@ services:
   # ============================================================================
 
   owner-console:
+    image: chai:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: infra/Dockerfile
@@ -536,6 +579,7 @@ services:
       - frontend
 
   client-portal:
+    image: chai:${IMAGE_TAG:-latest}
     build:
       context: ../..
       dockerfile: infra/Dockerfile

@@ -1,6 +1,41 @@
 import { createDatabase, runWithTenantRoster } from '@chai/database';
 
-import { runInboxDispatcher, type InboxHandler } from './index';
+import {
+  runInboxDispatcher,
+  type InboxClaim,
+  type InboxHandler,
+  type InboxHandlerResult,
+} from './index';
+
+/**
+ * Honest inbox handler for the standalone dispatcher.
+ *
+ * The domain effect for an inbox event is applied SYNCHRONOUSLY at the API edge
+ * (`ChannelsController.ingestWebhook` -> `repository.ingest` records the row,
+ * runs `ingestInboundEvent`, and marks it PROCESSED in one transaction), so a
+ * committed row is PROCESSED and never reaches this loop — `claimInboxBatch`
+ * only claims PENDING/RETRY. There is also no payload store to rebuild the raw
+ * event from: `chai.inbox_event` keeps only a `payload_reference` + hash.
+ *
+ * So a claim reaching here was NOT processed inline and cannot be processed by
+ * this worker. Acking it 'processed' would silently drop it — the exact bug this
+ * fixes. It returns 'retry' to surface a stray event through the dispatcher's
+ * retry -> DEAD_LETTER path. Real async processing is BLOCKED on a restricted
+ * payload store (packages/domain + apps/api), out of this worker's file scope.
+ */
+export function createInboxHandler(): InboxHandler {
+  return {
+    async process(claim: InboxClaim): Promise<InboxHandlerResult> {
+      console.warn(
+        'inbox-dispatcher: refusing to ack unprocessed inbox event; domain ' +
+          'ingest runs inline at the API edge and this worker has no payload ' +
+          'store to re-run it',
+        { id: claim.id, provider: claim.provider, tenantId: claim.tenantId },
+      );
+      return 'retry';
+    },
+  };
+}
 
 /**
  * Inbox dispatcher entrypoint.
@@ -14,13 +49,7 @@ async function main(): Promise<void> {
   const pollIntervalMs = positiveIntEnv('INBOX_POLL_INTERVAL_MS', 1_000);
   const refreshMs = positiveIntEnv('INBOX_ROSTER_REFRESH_MS', 30_000);
 
-  const handler: InboxHandler = {
-    async process() {
-      // ponytail: delegate to the domain worker (channel/conversation slice).
-      // Until then this no-op keeps the dispatcher verifiable in isolation.
-      return 'processed';
-    },
-  };
+  const handler = createInboxHandler();
 
   const database = createDatabase(databaseUrl);
 
@@ -77,7 +106,10 @@ function shutdownSignal(): AbortSignal {
   return controller.signal;
 }
 
-void main().catch((error) => {
-  console.error('inbox dispatcher failed', error);
-  process.exitCode = 1;
-});
+// ponytail: skip main when vitest (or any importer) loads this module.
+if (process.env.VITEST === undefined) {
+  void main().catch((error) => {
+    console.error('inbox dispatcher failed', error);
+    process.exitCode = 1;
+  });
+}

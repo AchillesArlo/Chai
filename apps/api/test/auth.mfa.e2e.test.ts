@@ -1,7 +1,12 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { generateTotpCode, verifyAccessToken } from '@chai/auth';
+import {
+  verifyAccessToken,
+} from '@chai/auth';
+import {
+  generateTotpCode,
+} from '@chai/auth/server';
 import type { LoginResponse } from '@chai/contracts';
 
 import { loadTokenConfig } from '../src/auth/token-config';

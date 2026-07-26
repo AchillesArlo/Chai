@@ -44,6 +44,14 @@ services:
     command: ["pnpm", "--filter", "@chai/api", "dev"]
     environment:
       APP_ENV: local
+      # LOCAL DEV ONLY: connects as the superuser (chai_admin). This stack applies
+      # migrations via postgres /docker-entrypoint-initdb.d (there is no `migrate`
+      # service), so nothing provisions passwords for the NOBYPASSRLS login roles
+      # (chai_api / chai_worker) that migration 0051 creates. Production and
+      # staging connect the runtime as those login roles so RLS is enforced (see
+      # infra/production + infra/staging). Tenant isolation is validated by the
+      # @chai/database / @chai/domain / @chai/api integration suites (which run as
+      # the runtime roles), not by this local convenience stack.
       DATABASE_URL: postgres://chai_admin:synthetic-admin-password@postgres:5432/chai
     depends_on:
       postgres:

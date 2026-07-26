@@ -8,8 +8,13 @@ import { runMigrations } from '../src/migrator';
 
 const ROLE_PASSWORDS = {
   chai_analytics_reader: 'synthetic-analytics-password',
+  // Production LOGIN roles created by migration 0051 (members of the runtime
+  // group roles). These are the path production actually connects on, so the
+  // suite exercises them directly. chai_admin (superuser) is used ONLY to seed.
+  chai_api: 'synthetic-api-login-password',
   chai_app_runtime: 'synthetic-runtime-password',
   chai_migration_owner: 'synthetic-migration-owner-password',
+  chai_worker: 'synthetic-worker-login-password',
   chai_worker_runtime: 'synthetic-worker-password',
 } as const;
 
@@ -54,6 +59,14 @@ export default async function setup(
     await admin.unsafe(
       `ALTER ROLE chai_analytics_reader LOGIN PASSWORD '${ROLE_PASSWORDS.chai_analytics_reader}'`,
     );
+    // chai_api / chai_worker are already LOGIN (migration 0051); set the
+    // synthetic password so the suite can connect on the production path.
+    await admin.unsafe(
+      `ALTER ROLE chai_api LOGIN PASSWORD '${ROLE_PASSWORDS.chai_api}'`,
+    );
+    await admin.unsafe(
+      `ALTER ROLE chai_worker LOGIN PASSWORD '${ROLE_PASSWORDS.chai_worker}'`,
+    );
   } finally {
     await admin.end();
   }
@@ -74,6 +87,16 @@ export default async function setup(
   project.provide(
     'workerDatabaseUrl',
     databaseUrlForRole(adminDatabaseUrl, 'chai_worker_runtime'),
+  );
+  // The PRODUCTION connection path: NOBYPASSRLS LOGIN roles (migration 0051),
+  // members of the runtime group roles above. Distinct from chai_admin.
+  project.provide(
+    'apiLoginDatabaseUrl',
+    databaseUrlForRole(adminDatabaseUrl, 'chai_api'),
+  );
+  project.provide(
+    'workerLoginDatabaseUrl',
+    databaseUrlForRole(adminDatabaseUrl, 'chai_worker'),
   );
 
   return async () => {

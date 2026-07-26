@@ -19,8 +19,15 @@
 # Pinned base: explicit patch tag, never :latest, so builds are reproducible and
 # never silently jump Node versions. Satisfies engines ">=24.12.0 <25".
 FROM node:24.12.0-alpine AS base
+# COREPACK_HOME must live on a world-readable path (not root's $HOME): the
+# prepare below runs as root, but the runtime stage drops to USER node and every
+# service's CMD is `pnpm …`. Without a shared cache the node user re-downloads
+# pnpm from the npm registry on every container start — which fails outright in
+# a network-restricted production (and is a needless supply-chain hit even when
+# egress exists). Pinning it under /pnpm keeps the prepared pnpm readable by all.
 ENV PNPM_HOME="/pnpm" \
     PATH="/pnpm:$PATH" \
+    COREPACK_HOME="/pnpm/corepack" \
     CI="true"
 # corepack ships with Node; pin pnpm to the repo's packageManager version.
 RUN corepack enable && corepack prepare pnpm@11.13.1 --activate
@@ -48,6 +55,25 @@ COPY packages ./packages
 COPY services ./services
 COPY workers ./workers
 RUN pnpm install --frozen-lockfile --offline
+
+# esbuild's allowed postinstall (pnpm-workspace.yaml `allowBuilds: esbuild`)
+# rewrites its own bin/esbuild from a JS launcher into the native platform
+# binary for speed. But pnpm links CLI bins as cmd-shim wrappers generated while
+# bin/esbuild was still JS, so they hardcode `exec node <bin>` — and running the
+# native ELF through node throws "SyntaxError: Invalid or unexpected token"
+# (pnpm/pnpm#5072). apps/api is the ONLY package that shells out to the esbuild
+# CLI; the Next.js/vite tasks call esbuild's JS API and resolve the platform
+# binary directly, so they are unaffected. Repoint the one stale shim at the
+# real binary so the OS execs it directly (and still honors the file's shebang
+# if the build is ever disabled and bin/esbuild stays a JS launcher). The
+# --version probe fails the layer loudly if the symlink is ever wrong.
+# ponytail: targeted repair of the single CLI consumer. Ceiling: if another
+# workspace package starts invoking the esbuild CLI, repoint its shim here too
+# (or drop esbuild from allowBuilds so bin/esbuild stays a pnpm-runnable JS launcher).
+RUN ESB="$(cd apps/api && node -p "require('node:path').join(require('node:path').dirname(require.resolve('esbuild/package.json')),'bin','esbuild')")" \
+ && ln -sf "$ESB" apps/api/node_modules/.bin/esbuild \
+ && apps/api/node_modules/.bin/esbuild --version >/dev/null
+
 RUN pnpm run build
 
 # -----------------------------------------------------------------------------

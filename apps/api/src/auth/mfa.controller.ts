@@ -12,12 +12,14 @@ import {
 import type { FastifyRequest } from 'fastify';
 
 import {
+  type Principal,
+} from '@chai/auth';
+import {
   generateTotpSecret,
   isTotpStepReplay,
-  type Principal,
   totpAuthUri,
   verifyTotpCode,
-} from '@chai/auth';
+} from '@chai/auth/server';
 
 import { TotpCodeDto } from './auth.dto';
 import {
