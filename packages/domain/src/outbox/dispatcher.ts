@@ -11,6 +11,8 @@ export interface OutboxClaim {
   payload: unknown;
   schemaVersion: number;
   tenantId: string;
+  /** W3C trace context of the request that produced the event, when traced. */
+  traceparent: string | null;
 }
 
 export interface OutboxClaimOptions {
@@ -69,7 +71,8 @@ export async function claimOutboxBatch(
       aggregate_version,
       partition_key,
       payload,
-      attempts
+      attempts,
+      traceparent
   `;
 
   return rows.map((row) => ({
@@ -83,6 +86,7 @@ export async function claimOutboxBatch(
     payload: row.payload as unknown,
     schemaVersion: row.schema_version as number,
     tenantId: row.tenant_id as string,
+    traceparent: (row.traceparent as string | null) ?? null,
   }));
 }
 

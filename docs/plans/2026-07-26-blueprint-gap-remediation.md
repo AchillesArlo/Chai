@@ -165,7 +165,7 @@ Bukti eksekusi terakhir, semuanya exit 0:
 | root `tests/` (termasuk guard boundary) | 164 lulus + 9 skip |
 | Migrasi | 46/46 diterapkan bersih |
 
-Yang **belum** tertutup dan sengaja dicatat sebagai utang, bukan diklaim selesai: retrieval belum hybrid dengan pgvector, `withSpan` belum ditaburkan ke jalur bisnis, dan `.github/workflows/ci.yml` belum pernah dieksekusi runner. Rincian per fase ada di catatan jujur masing-masing bagian di bawah, dan status pekerjaan pasca-fase ada di bagian berikut.
+Yang **belum** tertutup dan sengaja dicatat sebagai utang, bukan diklaim selesai: retrieval belum hybrid dengan pgvector, dan `.github/workflows/ci.yml` belum pernah dieksekusi runner. Rincian per fase ada di catatan jujur masing-masing bagian di bawah, dan status pekerjaan pasca-fase ada di bagian berikut.
 
 ---
 
@@ -204,6 +204,28 @@ Composer balasan di inbox client-portal dihidupkan memakai endpoint dari Gelomba
 Tes composer dari Fase 4 yang menegaskan tombol kirim nonaktif kini **usang dan diganti** dengan tiga tes: header dikirim benar, kunci idempotency dipakai ulang saat retry, dan konflik 409 memicu muat ulang tanpa membuang teks. `apps/client-portal` 7 → **9 tes**, `packages/api-client` tetap 35.
 
 Gate setelah gelombang ini, semuanya exit 0: `pnpm run lint` · `pnpm run typecheck` · `apps/api` 199 unit / 121 e2e · root `tests` 164 + 9 skip · `apps/client-portal` **9**.
+
+## 1d. Gelombang 3 — jejak eksekusi lintas proses, 26 Jul 2026
+
+`withSpan` disambungkan ke jalur bisnis, dengan satu prinsip: instrumentasi di **titik cekik**, bukan ditaburkan ke setiap fungsi.
+
+| Lapis | Yang dilakukan |
+|---|---|
+| Request HTTP | `registerTracingHook` (hook Fastify) membuat satu span per request, dinamai pola route (`GET /api/client/v1/payments/:externalId`) sehingga kardinalitas nama tetap terbatas. Path tak dikenal menjadi `GET (unmatched)` agar pemindai tidak bisa mencetak nama span tanpa batas. |
+| Pipeline Nest | `TracingInterceptor` **tidak** membuat span; ia hanya masuk kembali ke konteks yang disimpan hook, supaya pekerjaan handler — terutama `appendOutboxEvent` — bergantung pada span request sebagai induk. |
+| Penyeberangan proses | Migration `0047` menambah kolom `traceparent` pada `chai.outbox_event` beserta CHECK bentuk W3C. `appendOutboxEvent` menyimpan trace context yang aktif; dispatcher memulihkannya lewat `withRemoteTraceContext` dan membungkus pemrosesan dalam span `outbox.dispatch <event.type>`. |
+
+Hasilnya satu trace menutupi **request → transaksi → dispatch → efek eksternal**, yang menjawab pertanyaan paling sering muncul saat insiden: request mana yang menyebabkan pengiriman gagal ini.
+
+**Mengapa hook Fastify, bukan cukup interceptor:** Nest menjalankan guard **sebelum** interceptor. Diuji langsung — request yang ditolak `AudienceGuard` (401) dan `EntitlementGuard` (403) tidak menghasilkan span sama sekali ketika hanya memakai interceptor. Lonjakan 401 saat serangan atau badai 403 dari entitlement yang salah konfigurasi justru hal yang paling perlu dilihat operator. Ini persoalan urutan yang sama yang menjebak `EntitlementGuard` di Fase 3.
+
+Keputusan yang mungkin mengejutkan: status span untuk 4xx tetap **OK**, bukan ERROR. Sesuai semantik OTel, 4xx pada server span berarti pemanggil mengirim sesuatu yang kita tolak — bukan layanan ini yang gagal. ERROR hanya untuk 5xx. Kode penolakan tetap terekam di `http.response.status_code`.
+
+Kegagalan trace tidak boleh menjadi kegagalan bisnis: `currentTraceparent()` mengembalikan `null` bila telemetry mati (kondisi normal tanpa endpoint OTLP), `withRemoteTraceContext` menjalankan pekerjaan apa adanya bila header hilang atau rusak, dan event bisnis tetap commit tanpa trace context.
+
+Bukti: `apps/api` 199 → **202** unit dan 121 → **125** e2e · `packages/domain` 150 → **155** unit dan 46 → **49** integrasi · `workers/outbox-dispatcher` 2 → **5** integrasi (sebelumnya `runOutboxDispatcher` tidak punya cakupan tes sama sekali) · lint dan typecheck exit 0 · **47 migrasi**.
+
+Yang masih **belum** dilakukan dan tidak diklaim: span belum masuk ke dalam pemanggilan connector, karena aturan boundary melarang connector mengimpor `@chai/domain`; instrumentasi di sana harus datang dari pemanggilnya, dan pemanggil nyata (worker channel/payment) belum berbentuk proses berjalan. Inbox dispatcher juga belum membawa trace context — polanya sudah ada, tinggal diterapkan bila jalur masuk diinstrumentasi.
 
 ---
 

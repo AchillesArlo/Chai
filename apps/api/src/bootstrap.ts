@@ -2,6 +2,7 @@ import 'reflect-metadata';
 
 import helmet from '@fastify/helmet';
 import { ValidationPipe } from '@nestjs/common';
+import { registerTracingHook } from './common/tracing.hook';
 import { NestFactory } from '@nestjs/core';
 import {
   FastifyAdapter,
@@ -31,6 +32,9 @@ export async function createApplication(
 
   const fastify = app.getHttpAdapter().getInstance();
   registerCorrelationHook(fastify);
+  // Registered right after the correlation id so every request, including one
+  // rejected by a guard, is covered by a span.
+  registerTracingHook(fastify);
   registerTokenHook(fastify, {
     tokenConfig: loadTokenConfig(),
     allowTestSubject: options.environment !== 'production',

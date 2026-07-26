@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import type { DatabaseTransaction } from '@chai/database';
 
+import { currentTraceparent } from '../telemetry/trace-context';
+
 export interface OutboxEventInput {
   aggregateId: string;
   aggregateType: string;
@@ -52,7 +54,8 @@ export async function appendOutboxEvent(
       aggregate_version,
       partition_key,
       payload,
-      status
+      status,
+      traceparent
     ) VALUES (
       ${id},
       ${input.tenantId},
@@ -63,7 +66,8 @@ export async function appendOutboxEvent(
       ${Math.max(0, Math.trunc(input.aggregateVersion))}::int,
       ${input.partitionKey ?? input.aggregateId},
       ${JSON.stringify(input.payload ?? {})}::jsonb,
-      'PENDING'
+      'PENDING',
+      ${currentTraceparent()}
     )
   `;
   return id;

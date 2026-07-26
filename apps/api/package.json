@@ -27,6 +27,7 @@
     "@nestjs/core": "11.1.28",
     "@nestjs/platform-fastify": "11.1.28",
     "@nestjs/swagger": "11.4.5",
+    "@opentelemetry/api": "1.9.1",
     "class-transformer": "0.5.1",
     "class-validator": "0.15.1",
     "fastify": "5.10.0",
@@ -36,6 +37,7 @@
   },
   "devDependencies": {
     "@nestjs/testing": "11.1.28",
+    "@opentelemetry/sdk-trace-base": "2.10.0",
     "@testcontainers/postgresql": "12.0.4",
     "@types/node": "24.13.3",
     "esbuild": "0.28.1",

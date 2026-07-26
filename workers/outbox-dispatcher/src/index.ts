@@ -3,6 +3,8 @@ import {
   claimOutboxBatch,
   markOutboxEventPublished,
   retryOutboxEvent,
+  withRemoteTraceContext,
+  withSpan,
   type OutboxClaim,
 } from '@chai/domain';
 
@@ -80,7 +82,21 @@ export async function runOutboxDispatcher(
       if (claims.length > 0) didWork = true;
 
       for (const claim of claims) {
-        await processOutboxClaim(database, tenant, claim, publisher, options);
+        // Continue the trace that produced the event, so one trace covers
+        // request -> transaction -> dispatch -> external effect.
+        await withRemoteTraceContext(claim.traceparent, () =>
+          withSpan(
+            `outbox.dispatch ${claim.eventType}`,
+            () => processOutboxClaim(database, tenant, claim, publisher, options),
+            {
+              'chai.aggregate.type': claim.aggregateType,
+              'chai.event.type': claim.eventType,
+              'chai.outbox.attempts': claim.attempts,
+              'chai.outbox.event_id': claim.id,
+              'chai.tenant.id': claim.tenantId,
+            },
+          ),
+        );
       }
     }
 

@@ -9,6 +9,7 @@ import { ApiErrorFilter } from './common/error.filter';
 import { IdempotencyKeyInterceptor } from './common/idempotency.interceptor';
 import { ResponseEnvelopeInterceptor } from './common/response-envelope.interceptor';
 import { TenantContextInterceptor } from './common/tenant-context.interceptor';
+import { TracingInterceptor } from './common/tracing.interceptor';
 import { AuthorizationGuard } from './guards/authorization.guard';
 import { EntitlementGuard } from './guards/entitlement.guard';
 import { HealthController } from './health/health.controller';
@@ -109,6 +110,8 @@ import { ShipmentStateMachineModule } from './modules/shipment-state-machine/shi
     { provide: APP_GUARD, useClass: AUDIENCE_GUARD },
     { provide: APP_GUARD, useClass: AuthorizationGuard },
     { provide: APP_GUARD, useClass: EntitlementGuard },
+    // Outermost interceptor: everything below runs inside the request span.
+    { provide: APP_INTERCEPTOR, useClass: TracingInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyKeyInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
     { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },
