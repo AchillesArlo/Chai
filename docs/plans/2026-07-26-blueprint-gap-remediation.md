@@ -188,6 +188,23 @@ Gate setelah gelombang ini, semuanya exit 0: `pnpm run lint` 24/24 · `pnpm run 
 
 Pembersihan tambahan: `apps/client-portal/tsconfig.tsbuildinfo` dan `apps/owner-console/tsconfig.tsbuildinfo` dikeluarkan dari git (`*.tsbuildinfo` masuk `.gitignore`) — cache build inkremental yang berubah setiap `typecheck`.
 
+## 1c. Gelombang 2 — composer inbox, 26 Jul 2026
+
+Composer balasan di inbox client-portal dihidupkan memakai endpoint dari Gelombang 1. Dikerjakan sendiri, bukan paralel, karena bergantung pada endpoint tersebut.
+
+| Aspek | Perilaku |
+|---|---|
+| Kirim | `useApiMutation` ke `POST /client/v1/conversations/:id/messages`, `SavingIndicator` selama pengiriman. |
+| Idempotency | Kunci dicetak **sekali per percobaan** dan disimpan di `useRef` sampai berhasil, jadi retry setelah gagal jaringan memakai kunci yang sama dan API meng-collapse-nya alih-alih mengirim pesan kedua ke pelanggan. |
+| Concurrency | `If-Match: "<version>"` dari versi yang terakhir dibaca. Konflik 409/412 tidak di-retry membabi buta: operator diberi tahu, daftar dimuat ulang, dan teks yang sudah ditulis **tidak dibuang**. |
+| Render | Pesan yang ditampilkan berasal dari respons API (`id`, `text`, `createdAt`), bukan dibuat lokal. |
+
+**Bug lintas paket yang ditemukan sambil mengerjakan ini:** `packages/api-client` mengirim header `x-idempotency-key`, sedangkan `apps/api/src/common/idempotency.interceptor.ts` membaca `idempotency-key`. Artinya **setiap mutasi dari browser akan ditolak** dengan `IDEMPOTENCY_KEY_REQUIRED`. Tidak pernah terdeteksi karena sampai Fase 4 frontend tidak punya satu pun mutasi nyata — yang ada hanya modal palsu yang mereset state lokal. Nama kanonik `Idempotency-Key` yang dipakai API adalah yang benar, jadi klien yang diperbaiki; tes api-client yang menegaskan nama lama dibalik.
+
+Tes composer dari Fase 4 yang menegaskan tombol kirim nonaktif kini **usang dan diganti** dengan tiga tes: header dikirim benar, kunci idempotency dipakai ulang saat retry, dan konflik 409 memicu muat ulang tanpa membuang teks. `apps/client-portal` 7 → **9 tes**, `packages/api-client` tetap 35.
+
+Gate setelah gelombang ini, semuanya exit 0: `pnpm run lint` · `pnpm run typecheck` · `apps/api` 199 unit / 121 e2e · root `tests` 164 + 9 skip · `apps/client-portal` **9**.
+
 ---
 
 Ringkasan Eksekutif

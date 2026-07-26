@@ -1,10 +1,11 @@
-﻿'use client';
+'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { MessageSquare, Plus, Search, Send, UserCheck, X } from 'lucide-react';
-import { AppShell, MetricCard, StatusBadge } from '@chai/ui';
-import { useApiQuery, useInboxStream } from '@chai/api-client/react';
+import { AppShell, MetricCard, SavingIndicator, StatusBadge } from '@chai/ui';
+import { ApiError } from '@chai/api-client';
+import { useApiMutation, useApiQuery, useInboxStream } from '@chai/api-client/react';
 import { CLIENT_PORTAL_NAVIGATION } from './config/navigation';
 
 export interface MessageItem {
@@ -22,10 +23,19 @@ export interface ConversationRow {
   mode: 'AI_ACTIVE' | 'HUMAN_ACTIVE' | 'PAUSED';
   priority: 'NORMAL' | 'URGENT';
   status: 'OPEN' | 'PENDING_AGENT' | 'RESOLVED';
+  /** Aggregate version, sent back as the If-Match precondition on a reply. */
+  version: number;
 }
 
 // ponytail: backend ConversationSummary (apps/api/src/modules/channels) lacks customer/lastMessage/messages.
 // Mapping partial until backend enriches the summary shape.
+/** What the reply endpoint returns; the API is the only source of these fields. */
+interface OutboundMessage {
+  createdAt: string;
+  id: string;
+  text: string | null;
+}
+
 interface BackendConversation {
   id: string;
   contactId?: string;
@@ -35,6 +45,7 @@ interface BackendConversation {
   status?: 'OPEN' | 'PENDING_AGENT' | 'RESOLVED';
   assigneeUserId?: string;
   lastMessageAt?: string;
+  version?: number;
 }
 
 function toRow(c: BackendConversation): ConversationRow {
@@ -46,12 +57,13 @@ function toRow(c: BackendConversation): ConversationRow {
     mode: c.mode ?? 'PAUSED',
     priority: 'NORMAL',
     status: c.status ?? 'OPEN',
+    version: c.version ?? 1,
   };
 }
 
 export function UnifiedInbox() {
   const pathname = usePathname();
-  const { data: backendConversations, isLoading, error } = useApiQuery<BackendConversation[]>(
+  const { data: backendConversations, error, isLoading, refetch } = useApiQuery<BackendConversation[]>(
     ['conversations'],
     '/client/v1/conversations',
   );
@@ -60,6 +72,14 @@ export function UnifiedInbox() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPEN' | 'PENDING_AGENT' | 'RESOLVED'>('ALL');
   const [newMessageText, setNewMessageText] = useState('');
+  const [replyError, setReplyError] = useState<string | null>(null);
+  const [sendState, setSendState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  /**
+   * The idempotency key is minted once per attempt and kept until the send
+   * succeeds. A retry after a network failure therefore reuses the same key, so
+   * the API collapses it instead of sending the customer a second message.
+   */
+  const attemptKey = useRef<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerMessage, setNewCustomerMessage] = useState('');
@@ -83,16 +103,87 @@ export function UnifiedInbox() {
       setConversations((prev) => {
         if (prev.some((c) => c.id === id)) return prev;
         return [
-          { customer: 'Live update', id, lastMessage: 'New activity', messages: [], mode: 'PAUSED', priority: 'NORMAL', status: 'OPEN' },
+          { customer: 'Live update', id, lastMessage: 'New activity', messages: [], mode: 'PAUSED', priority: 'NORMAL', status: 'OPEN', version: 1 },
           ...prev,
         ];
       });
     },
   });
 
-  const openCount = conversations.filter((c) => c.status === 'OPEN').length;
-  const pendingCount = conversations.filter((c) => c.status === 'PENDING_AGENT').length;
+  const openCount = conversations.filter((c) => c.status === 'OPEN').length;  const pendingCount = conversations.filter((c) => c.status === 'PENDING_AGENT').length;
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
+
+  const sendMessage = useApiMutation<OutboundMessage>(
+    'POST',
+    selectedId ? `/client/v1/conversations/${selectedId}/messages` : '',
+  );
+
+  async function sendReply(): Promise<void> {
+    const text = newMessageText.trim();
+    if (!selected || text.length === 0) return;
+
+    setReplyError(null);
+    setSendState('saving');
+    attemptKey.current ??= crypto.randomUUID();
+
+    try {
+      const created = await sendMessage.mutateAsync({
+        body: { text },
+        config: {
+          headers: {
+            // If-Match is the canonical precondition; sending the version we last
+            // read means a reply written against a stale view is refused rather
+            // than silently applied on top of someone else's change.
+            'if-match': `"${selected.version}"`,
+          },
+          idempotencyKey: attemptKey.current,
+        },
+      });
+
+      // Append what the API actually returned; nothing here is invented locally.
+      setConversations((prev) =>
+        prev.map((row) =>
+          row.id === selected.id
+            ? {
+                ...row,
+                lastMessage: created.text ?? row.lastMessage,
+                messages: [
+                  ...row.messages,
+                  {
+                    id: created.id,
+                    sender: 'agent',
+                    text: created.text ?? '',
+                    timestamp: created.createdAt,
+                  },
+                ],
+                version: row.version + 1,
+              }
+            : row,
+        ),
+      );
+      setNewMessageText('');
+      attemptKey.current = null;
+      setSendState('saved');
+    } catch (error) {
+      setSendState('idle');
+      const status = error instanceof ApiError ? error.status : 0;
+      if (status === 409 || status === 412) {
+        // Someone else moved the conversation on. Reloading is the only honest
+        // recovery: the operator has to see the new state before replying.
+        setReplyError(
+          'Percakapan sudah berubah sejak terakhir dimuat. Memuat ulang; kirim ulang balasan Anda setelah memeriksanya.',
+        );
+        void refetch();
+        attemptKey.current = null;
+        return;
+      }
+      setReplyError(
+        error instanceof Error
+          ? `Balasan gagal terkirim: ${error.message}`
+          : 'Balasan gagal terkirim.',
+      );
+    }
+  }
 
   const filtered = conversations.filter((c) => {
     if (statusFilter !== 'ALL' && c.status !== statusFilter) return false;
@@ -219,34 +310,38 @@ export function UnifiedInbox() {
                     )}
                   </div>
                   <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void sendReply();
                     }}
                     className="border-t border-slate-200 p-4"
                   >
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
-                        disabled
+                        disabled={sendMessage.isPending}
                         value={newMessageText}
                         onChange={(e) => setNewMessageText(e.target.value)}
-                        placeholder="Type a replyâ€¦"
+                        placeholder="Tulis balasan..."
+                        aria-label="Balasan"
                         className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none disabled:bg-slate-50 disabled:text-slate-400"
                       />
                       <button
                         type="submit"
-                        disabled
-                        title="Replying isn't available yet: the API has no conversation reply endpoint."
+                        disabled={sendMessage.isPending || newMessageText.trim().length === 0}
                         className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Send className="size-4" /> Send
                       </button>
                     </div>
-                    <p className="mt-2 text-xs text-slate-500">
-                      Replying isn&rsquo;t available yet &mdash; the conversation reply endpoint
-                      hasn&rsquo;t been built in the API, so a message can&rsquo;t be sent from the
-                      inbox. The action is disabled instead of clearing your text as if it were sent.
-                    </p>
+                    <div className="mt-2 flex items-center gap-3">
+                      <SavingIndicator label="Mengirim..." savedLabel="Terkirim" state={sendState} />
+                      {replyError ? (
+                        <p className="text-xs text-red-600" role="alert">
+                          {replyError}
+                        </p>
+                      ) : null}
+                    </div>
                   </form>
                 </>
               ) : (

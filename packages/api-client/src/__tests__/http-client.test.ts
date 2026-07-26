@@ -105,7 +105,7 @@ describe('HttpClient', () => {
       expect.any(String),
       expect.objectContaining({
         headers: expect.objectContaining({
-          'x-idempotency-key': expect.stringMatching(/^[0-9a-f-]{36}$/),
+          'idempotency-key': expect.stringMatching(/^[0-9a-f-]{36}$/),
         }),
       })
     );
@@ -125,7 +125,7 @@ describe('HttpClient', () => {
       expect.any(String),
       expect.objectContaining({
         headers: expect.objectContaining({
-          'x-idempotency-key': expect.stringMatching(/^[0-9a-f-]{36}$/),
+          'idempotency-key': expect.stringMatching(/^[0-9a-f-]{36}$/),
         }),
       })
     );
@@ -145,7 +145,7 @@ describe('HttpClient', () => {
       expect.any(String),
       expect.objectContaining({
         headers: expect.objectContaining({
-          'x-idempotency-key': expect.stringMatching(/^[0-9a-f-]{36}$/),
+          'idempotency-key': expect.stringMatching(/^[0-9a-f-]{36}$/),
         }),
       })
     );
@@ -163,7 +163,7 @@ describe('HttpClient', () => {
 
     const callArgs = vi.mocked(fetch).mock.calls[0];
     const init = callArgs?.[1] as RequestInit;
-    expect(init.headers).not.toHaveProperty('x-idempotency-key');
+    expect(init.headers).not.toHaveProperty('idempotency-key');
   });
 
   it('should throw ApiError on non-ok response', async () => {

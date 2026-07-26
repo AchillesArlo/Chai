@@ -138,9 +138,14 @@ export class HttpClient {
       }
     }
 
-    // Add idempotency key for mutation methods
+    // Add idempotency key for mutation methods.
+    // The header name is `Idempotency-Key`, which is what the API actually reads
+    // (apps/api/src/common/idempotency.interceptor.ts). The previous
+    // `x-idempotency-key` meant every mutation from a browser was rejected with
+    // IDEMPOTENCY_KEY_REQUIRED; nothing caught it because the frontend had no
+    // real mutations until the inbox reply was wired.
     if (shouldAddIdempotencyKey(method)) {
-      requestHeaders['x-idempotency-key'] = idempotencyKey ?? generateIdempotencyKey();
+      requestHeaders['idempotency-key'] = idempotencyKey ?? generateIdempotencyKey();
     }
 
     // Build URL
