@@ -1,0 +1,26 @@
+{
+  "name": "@chai/broker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json --noEmit",
+    "lint": "eslint src test vitest.integration.config.ts",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "vitest run --root . --passWithNoTests",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@chai/domain": "workspace:*",
+    "ioredis": "5.11.1"
+  },
+  "devDependencies": {
+    "@testcontainers/redis": "12.0.4",
+    "@types/node": "24.13.3",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}

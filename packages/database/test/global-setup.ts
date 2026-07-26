@@ -1,9 +1,10 @@
-import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
 import postgres from 'postgres';
 import type { TestProject } from 'vitest/node';
+
+import { runMigrations } from '../src/migrator';
 
 const ROLE_PASSWORDS = {
   chai_analytics_reader: 'synthetic-analytics-password',
@@ -33,19 +34,14 @@ export default async function setup(
 
   const adminDatabaseUrl = container.getConnectionUri();
   const migrationsDirectory = join(process.cwd(), 'migrations');
-  const migrationFiles = (await readdir(migrationsDirectory))
-    .filter((fileName) => fileName.endsWith('.sql'))
-    .sort();
+
+  // Run the SAME migration runner that ships to production, so the path the
+  // integration suite exercises is the deploy path (not a test-only loop).
+  await runMigrations({ databaseUrl: adminDatabaseUrl, migrationsDirectory });
+
   const admin = postgres(adminDatabaseUrl, { max: 1 });
 
   try {
-    for (const migrationFile of migrationFiles) {
-      const migration = await readFile(
-        join(migrationsDirectory, migrationFile),
-        'utf8',
-      );
-      await admin.unsafe(migration);
-    }
     await admin.unsafe(
       `ALTER ROLE chai_migration_owner LOGIN PASSWORD '${ROLE_PASSWORDS.chai_migration_owner}'`,
     );

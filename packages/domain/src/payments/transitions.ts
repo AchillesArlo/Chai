@@ -1,7 +1,10 @@
-import type { PaymentStatus } from '@chai/connectors/mock-payment';
-
 /**
  * Payment status transition rules (17_PAYMENT §6.2).
+ *
+ * This is the single source of truth for how a payment may change state. It
+ * lives in the domain (not in `apps/api`) because both the API webhook path and
+ * the reconciliation worker must apply the SAME rules — a second copy of a money
+ * state machine is a divergence waiting to happen (GAP-009 / R-10).
  *
  * Two properties matter more than the graph itself:
  *
@@ -14,8 +17,26 @@ import type { PaymentStatus } from '@chai/connectors/mock-payment';
  *
  * `UNKNOWN_RESULT` is an execution state, not a business status: it means the
  * provider may have accepted the operation and the platform must reconcile
- * before retrying (GAP-015).
+ * before retrying (GAP-015). It is NOT terminal, so an uncertain attempt stays
+ * open for the reconciler to resolve.
  */
+
+/**
+ * Canonical payment lifecycle statuses.
+ *
+ * Defined here (rather than imported from a connector) so the domain owns its
+ * own vocabulary, matching the convention already used for `RefundStatus`. The
+ * connector layer declares a structurally identical union for its own adapters;
+ * the database `chai.payment.status` CHECK constraint is the ultimate authority
+ * and lists exactly these six values.
+ */
+export type PaymentStatus =
+  | 'CREATED'
+  | 'PENDING'
+  | 'PAID'
+  | 'EXPIRED'
+  | 'FAILED'
+  | 'UNKNOWN_RESULT';
 
 const ALLOWED: Record<PaymentStatus, readonly PaymentStatus[]> = {
   CREATED: ['CREATED', 'PENDING', 'PAID', 'EXPIRED', 'FAILED', 'UNKNOWN_RESULT'],

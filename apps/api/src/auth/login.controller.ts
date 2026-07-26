@@ -13,10 +13,9 @@ import type { FastifyRequest } from 'fastify';
 import {
   type Audience,
   type ClientRole,
-  type CredentialStore,
   authenticateCredentials,
   extractBearerToken,
-  issueTokens,
+  type MfaState,
   verifyAccessToken,
   verifyRefreshToken,
   type Principal,
@@ -33,57 +32,20 @@ import {
   type CredentialStore as ApiCredentialStore,
 } from './credential-store.di';
 import { REFRESH_TOKEN_STORE } from './refresh-token-store';
+import { issueSessionResponse, type LoginResponseBody } from './session-tokens';
 import { TOKEN_CONFIG_TOKEN, type TokenConfigProvider } from './token-config.di';
 
 const LOGIN_AUDIENCE_META = 'login-audience';
 
-export interface LoginResponseBody {
-  accessToken: string;
-  refreshToken: string;
-  expiresIn: number;
-  tokenType: 'Bearer';
-  principal: {
-    principalId: string;
-    audience: Audience;
-    tenantId?: string;
-    role?: string;
-  };
-}
-
-function principalSummary(principal: Principal) {
-  return {
-    principalId: principal.id,
-    audience: principal.audience,
-    role: principal.kind === 'USER' ? principal.membership?.role : undefined,
-    tenantId:
-      principal.kind === 'USER'
-        ? principal.membership?.tenantId
-        : principal.tenantId,
-  };
-}
-
-function mapPrincipalToLoginBody(
-  principal: Principal,
-  tokens: Awaited<ReturnType<typeof issueTokens>>,
-): LoginResponseBody {
-  return {
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken,
-    expiresIn: tokens.expiresIn,
-    tokenType: 'Bearer',
-    principal: principalSummary(principal),
-  };
-}
-
 function failLogin(): never {
-  // ponytail: single message — never reveal whether email exists.
+  // ponytail: single message — never reveal whether email exists or is locked.
   throw new UnauthorizedException('Invalid email or password');
 }
 
 async function performLogin(
   body: unknown,
   audience: Audience,
-  credentialStore: CredentialStore,
+  credentialStore: ApiCredentialStore,
   tokenConfig: TokenConfig,
 ): Promise<LoginResponseBody> {
   const parsed = LoginRequestSchema.safeParse(body);
@@ -102,30 +64,19 @@ async function performLogin(
     failLogin();
   }
 
-  const tokens = await issueTokens({ principal: result.principal, config: tokenConfig });
-  REFRESH_TOKEN_STORE.record({
-    jti: extractJti(tokens.refreshToken),
-    principalId: result.principal.id,
-    expiresAt: tokens.refreshTokenExpiresAt,
-    revoked: false,
-  });
-  return mapPrincipalToLoginBody(result.principal, tokens);
-}
+  let principal = result.principal;
+  // A confirmed MFA factor means the password is only the first factor: issue a
+  // partial session (mfaState REQUIRED) that owner guards reject until the TOTP
+  // step-up endpoint verifies a code. mfaState is derived from the store, never
+  // from client input.
+  if (
+    principal.kind === 'USER' &&
+    (await credentialStore.mfaChallengeRequired(principal.id))
+  ) {
+    principal = { ...principal, mfaState: 'REQUIRED' };
+  }
 
-function extractJti(refreshToken: string): string {
-  const parts = refreshToken.split('.');
-  if (parts.length !== 3) {
-    throw new Error('Malformed refresh token');
-  }
-  try {
-    const payload = JSON.parse(
-      Buffer.from(parts[1] as string, 'base64url').toString('utf8'),
-    ) as { jti?: string };
-    if (!payload.jti) throw new Error('Missing jti');
-    return payload.jti;
-  } catch (error) {
-    throw error instanceof Error ? error : new Error('Failed to parse jti');
-  }
+  return issueSessionResponse(principal, tokenConfig);
 }
 
 @Controller('auth')
@@ -232,17 +183,7 @@ async function performRefresh(
   if (!refreshedPrincipal) {
     throw new UnauthorizedException('Invalid refresh token');
   }
-  const tokens = await issueTokens({
-    principal: refreshedPrincipal,
-    config: tokenConfig,
-  });
-  REFRESH_TOKEN_STORE.record({
-    jti: extractJti(tokens.refreshToken),
-    principalId: refreshedPrincipal.id,
-    expiresAt: tokens.refreshTokenExpiresAt,
-    revoked: false,
-  });
-  return mapPrincipalToLoginBody(refreshedPrincipal, tokens);
+  return issueSessionResponse(refreshedPrincipal, tokenConfig);
 }
 
 function rebuildPrincipalFromClaims(claims: {
@@ -250,6 +191,7 @@ function rebuildPrincipalFromClaims(claims: {
   aud: Audience;
   tenantId?: string;
   role?: string;
+  mfaState?: MfaState;
 }): Principal | null {
   if (claims.aud === 'owner-console') {
     return {
@@ -257,7 +199,9 @@ function rebuildPrincipalFromClaims(claims: {
       authenticatedAt: new Date(),
       id: claims.sub,
       kind: 'USER',
-      mfaState: 'ENROLLED',
+      // Preserve the MFA state carried by the (signed) refresh token so a
+      // rotation cannot silently upgrade a partial session to ENROLLED.
+      mfaState: claims.mfaState ?? 'REQUIRED',
       platformRole: 'PLATFORM_OWNER',
       status: 'ACTIVE',
     };
@@ -300,3 +244,4 @@ async function performLogout(
 }
 
 export { LOGIN_AUDIENCE_META };
+export type { LoginResponseBody };

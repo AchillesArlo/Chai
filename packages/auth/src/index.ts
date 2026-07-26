@@ -4,6 +4,8 @@ export * from './credentials';
 export * from './local-identity-adapter';
 export * from './permissions';
 export * from './roles';
+export * from './scrypt';
 export * from './session-cookies';
 export * from './session-policy';
 export * from './tokens';
+export * from './totp';

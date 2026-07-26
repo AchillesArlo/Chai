@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { DATABASE, type DatabaseHandle } from '../database/database.module';
 import { AudienceGuard } from './audience.guard';
 import {
   ClientLoginController,
@@ -9,6 +10,7 @@ import {
   CredentialStoreToken,
   createCredentialStore,
 } from './credential-store.di';
+import { OwnerMfaController } from './mfa.controller';
 import {
   TOKEN_CONFIG_TOKEN,
   createTokenConfigProvider,
@@ -26,12 +28,14 @@ export { AudienceGuard as AUDIENCE_GUARD };
     ClientLoginController,
     OwnerSessionController,
     ClientSessionController,
+    OwnerMfaController,
   ],
   providers: [
     AudienceGuard,
     {
       provide: CredentialStoreToken,
-      useFactory: createCredentialStore,
+      inject: [DATABASE],
+      useFactory: (database: DatabaseHandle) => createCredentialStore(database),
     },
     {
       provide: TOKEN_CONFIG_TOKEN,

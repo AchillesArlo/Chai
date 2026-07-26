@@ -1,0 +1,32 @@
+# Build-context ignore for infra/Dockerfile.
+# BuildKit reads "<dockerfile-path>.dockerignore" in preference to a context
+# root .dockerignore, so this scopes cleanly to the production build.
+#
+# Defense-in-depth: the Dockerfile already COPYs selectively (it never does
+# `COPY . .` and never touches infra/), but this keeps host secrets, local
+# caches, and build outputs out of the build context entirely.
+
+# Secrets and local env — never shipped into an image.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Installed deps and build outputs — the image installs and builds fresh.
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+*.tsbuildinfo
+
+# VCS, logs, coverage/report artifacts, and the derived knowledge graph.
+.git
+.github
+**/*.log
+**/coverage
+**/test-results
+**/playwright-report
+graphify-out
+
+# Infra runtime material (nginx/postgres/redis configs, TLS certs, env
+# examples) is mounted at run time, not baked into the image.
+infra

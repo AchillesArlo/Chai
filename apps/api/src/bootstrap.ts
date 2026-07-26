@@ -11,6 +11,7 @@ import {
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 import { AppModule } from './app.module';
+import { registerAuthRateLimit } from './auth/auth-rate-limit';
 import { registerLocalIdentityHook } from './auth/local-identity';
 import { loadTokenConfig } from './auth/token-config';
 import { registerTokenHook } from './auth/token-hook';
@@ -41,6 +42,9 @@ export async function createApplication(
   });
   registerLocalIdentityHook(fastify, options.environment);
   await app.register(helmet, { contentSecurityPolicy: false });
+  // Rate limiting is registered before Nest adds its routes (during init), so
+  // the global preHandler limiter covers every route including guard rejections.
+  await registerAuthRateLimit(fastify);
   app.useGlobalPipes(
     new ValidationPipe({
       forbidNonWhitelisted: true,

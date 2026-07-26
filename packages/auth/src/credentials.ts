@@ -1,5 +1,6 @@
 import type { Audience } from './audiences';
 import type { Principal } from './roles';
+import { hashPasswordScrypt, isScryptHash, verifyPasswordScrypt } from './scrypt';
 
 /**
  * PBKDF2 password hashing via Web Crypto (stdlib, no bcrypt dep).
@@ -100,6 +101,62 @@ function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
+/**
+ * Verifies a password against either a scrypt (`scrypt$…`) or legacy pbkdf2
+ * (`pbkdf2$…`) hash, so a store can migrate hash schemes without a flag day.
+ */
+export async function verifyPasswordHash(
+  password: string,
+  stored: string,
+): Promise<boolean> {
+  if (isScryptHash(stored)) {
+    return verifyPasswordScrypt(password, stored);
+  }
+  return verifyPassword(password, stored);
+}
+
+let dummyHashPromise: Promise<string> | null = null;
+
+function dummyScryptHash(): Promise<string> {
+  dummyHashPromise ??= hashPasswordScrypt('timing-uniformity-placeholder');
+  return dummyHashPromise;
+}
+
+/**
+ * Runs one scrypt verification against a throwaway hash so the unknown-user,
+ * disabled, and locked branches cost the same as a real password check. Without
+ * this, response timing would reveal whether an email exists (user enumeration).
+ */
+async function burnVerify(password: string): Promise<void> {
+  await verifyPasswordScrypt(password, await dummyScryptHash());
+}
+
+export interface LockoutPolicy {
+  /** Consecutive failures that trigger a temporary lock. */
+  maxFailedAttempts: number;
+  /** How long the lock lasts, in milliseconds. */
+  lockDurationMs: number;
+}
+
+export const DEFAULT_LOCKOUT_POLICY: LockoutPolicy = {
+  maxFailedAttempts: 5,
+  lockDurationMs: 15 * 60 * 1_000,
+};
+
+/**
+ * Shared lock computation so every store derives `locked_until` identically:
+ * once the failure count reaches the threshold, lock for the configured window.
+ */
+export function computeLockedUntil(
+  failedAttemptCount: number,
+  now: Date,
+  policy: LockoutPolicy = DEFAULT_LOCKOUT_POLICY,
+): Date | null {
+  return failedAttemptCount >= policy.maxFailedAttempts
+    ? new Date(now.getTime() + policy.lockDurationMs)
+    : null;
+}
+
 export interface CredentialRecord {
   principal: Principal;
   /**
@@ -118,10 +175,28 @@ export interface CredentialRecord {
 
 export interface CredentialLookupResult {
   record: CredentialRecord;
+  /**
+   * When set and in the future, the account is temporarily locked from prior
+   * failed attempts and login must be refused before checking the password.
+   */
+  lockedUntil?: Date | null;
+}
+
+export interface LockoutOutcome {
+  lockedUntil: Date | null;
+  failedAttemptCount: number;
 }
 
 export interface CredentialStore {
   findByEmail(email: string, audience: Audience): Promise<CredentialLookupResult | null>;
+  /**
+   * Records one failed password attempt for the user and returns the resulting
+   * lock state. Optional so simple stores can omit lockout; when present,
+   * {@link authenticateCredentials} uses it to enforce lockout.
+   */
+  recordFailedAttempt?(userId: string, now?: Date): Promise<LockoutOutcome>;
+  /** Clears the failed-attempt counter after a successful login. Optional. */
+  resetFailedAttempts?(userId: string): Promise<void>;
   recordRefreshToken?(principalId: string, jti: string, expiresAt: number): Promise<void>;
   revokeRefreshToken?(jti: string): Promise<void>;
   isRefreshTokenRevoked?(jti: string): Promise<boolean>;
@@ -136,11 +211,17 @@ export interface AuthenticateCredentialsInput {
   password: string;
   audience: Audience;
   store: CredentialStore;
+  /** Reference time, injectable for tests. Defaults to now. */
+  now?: Date;
 }
 
 export interface AuthenticateCredentialsFailure {
   ok: false;
-  reason: 'UNKNOWN_CREDENTIALS' | 'INVALID_PASSWORD' | 'ACCOUNT_DISABLED';
+  reason:
+    | 'UNKNOWN_CREDENTIALS'
+    | 'INVALID_PASSWORD'
+    | 'ACCOUNT_DISABLED'
+    | 'ACCOUNT_LOCKED';
 }
 
 export interface AuthenticateCredentialsSuccess {
@@ -153,31 +234,48 @@ export type AuthenticateCredentialsResult =
   | AuthenticateCredentialsSuccess;
 
 /**
- * Constant-message credential check: returns the same opaque reason for
- * unknown-email and wrong-password to avoid user enumeration.
+ * Constant-message credential check. Every failure branch runs exactly one
+ * scrypt verification (real or dummy) so unknown-email, wrong-password,
+ * disabled, and locked all take the same time — no user enumeration by timing.
+ * When the store supports it, consecutive failures raise a counter that
+ * temporarily locks the account.
  */
 export async function authenticateCredentials({
   email,
   password,
   audience,
   store,
+  now = new Date(),
 }: AuthenticateCredentialsInput): Promise<AuthenticateCredentialsResult> {
   const lookup = await store.findByEmail(normalizeEmail(email), audience);
   if (!lookup) {
-    // ponytail: still run a dummy hash to keep timing uniform.
-    await hashPassword(password);
+    await burnVerify(password);
     return { ok: false, reason: 'UNKNOWN_CREDENTIALS' };
   }
   const { record } = lookup;
+  if (lookup.lockedUntil && lookup.lockedUntil.getTime() > now.getTime()) {
+    await burnVerify(password);
+    return { ok: false, reason: 'ACCOUNT_LOCKED' };
+  }
   if (!record.enabled) {
+    await burnVerify(password);
     return { ok: false, reason: 'ACCOUNT_DISABLED' };
   }
   if (!record.passwordHash) {
+    await burnVerify(password);
     return { ok: false, reason: 'UNKNOWN_CREDENTIALS' };
   }
-  const valid = await verifyPassword(password, record.passwordHash);
+  const valid = await verifyPasswordHash(password, record.passwordHash);
   if (!valid) {
+    const outcome = await store.recordFailedAttempt?.(record.principal.id, now);
+    if (
+      outcome?.lockedUntil &&
+      outcome.lockedUntil.getTime() > now.getTime()
+    ) {
+      return { ok: false, reason: 'ACCOUNT_LOCKED' };
+    }
     return { ok: false, reason: 'INVALID_PASSWORD' };
   }
+  await store.resetFailedAttempts?.(record.principal.id);
   return { ok: true, principal: record.principal };
 }

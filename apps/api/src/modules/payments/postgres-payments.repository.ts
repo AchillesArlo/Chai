@@ -13,7 +13,7 @@ import {
 
 import { API_SERVICE_PRINCIPAL_ID } from '../../database/api-ids';
 import { DATABASE } from '../../database/database.module';
-import { decidePaymentTransition } from './payment-transitions';
+import { decidePaymentTransition } from '@chai/domain';
 import { PaymentsRepository } from './payments.repository';
 
 interface PaymentRow {

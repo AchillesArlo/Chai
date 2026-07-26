@@ -1,4 +1,4 @@
-import { IsEmail, IsString, Length, MaxLength } from 'class-validator';
+import { IsEmail, IsString, Length, Matches, MaxLength } from 'class-validator';
 
 import {
   LOGIN_EMAIL_MAX,
@@ -25,4 +25,11 @@ export class RefreshBodyDto {
   @IsString()
   @MaxLength(4096)
   refreshToken!: string;
+}
+
+/** A 6-digit TOTP code for MFA confirmation and login step-up. */
+export class TotpCodeDto {
+  @IsString()
+  @Matches(/^[0-9]{6}$/)
+  code!: string;
 }

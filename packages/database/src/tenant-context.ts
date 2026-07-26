@@ -7,6 +7,35 @@ export interface TenantContext {
   tenantId: string;
 }
 
+/**
+ * Reads the active-tenant roster via the SECURITY DEFINER function
+ * `chai.active_tenant_roster()` (migration 0050) -- the ONLY sanctioned way for
+ * a worker role to enumerate tenants across the RLS boundary. Returns one
+ * context per ACTIVE tenant, each carrying the platform service principal the
+ * worker should assume.
+ *
+ * The worker DB role has EXECUTE on that function but no direct SELECT on
+ * chai.tenant, so this is the sole cross-tenant read path. Workers call it
+ * periodically, so a newly-activated tenant becomes visible without a redeploy.
+ *
+ * Values are validated here at the DB->app trust boundary (same schemas
+ * withTenantTransaction enforces), so a malformed roster fails loudly rather
+ * than silently poisoning a tenant's security context downstream.
+ */
+export async function readActiveTenantRoster(
+  database: Database,
+): Promise<TenantContext[]> {
+  const rows = await database<{ principal_id: string; tenant_id: string }[]>`
+    SELECT tenant_id, principal_id
+    FROM chai.active_tenant_roster()
+  `;
+
+  return rows.map((row) => ({
+    principalId: ActorIdSchema.parse(row.principal_id),
+    tenantId: TenantIdSchema.parse(row.tenant_id),
+  }));
+}
+
 export async function withPrincipalTransaction<T>(
   database: Database,
   principalId: string,

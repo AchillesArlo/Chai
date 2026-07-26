@@ -1,22 +1,28 @@
 import {
   type Audience,
+  computeLockedUntil,
+  type CredentialLookupResult,
   type CredentialRecord,
   type CredentialStore,
-  hashPassword,
+  hashPasswordScrypt,
+  type LockoutOutcome,
 } from '@chai/auth';
 
 import { API_CLIENT_AGENT_ID, API_CLIENT_OWNER_ID, API_TENANT_ID } from '../database/api-ids';
+import type { MfaOperations, TotpFactorState } from './mfa-store';
 
 /**
- * ponytail: in-memory credential store seeded with deterministic dev accounts.
- * Swap with the Postgres-backed store (CredentialStore contract unchanged)
- * when the iam/users table lands a password_hash column — interface is stable.
+ * ponytail: in-memory credential store for local/test only. Accounts, lockout
+ * counters, and enrolled MFA factors live in per-instance maps and reset on
+ * restart. `createCredentialStore` swaps in the Postgres store whenever a
+ * DATABASE handle exists; the CredentialStore + MfaOperations contract is the
+ * same, so callers do not branch.
  */
 
 const SEED_PASSWORD = 'Password123!';
 
 async function seedRecords(): Promise<readonly CredentialRecord[]> {
-  const passwordHash = await hashPassword(SEED_PASSWORD);
+  const passwordHash = await hashPasswordScrypt(SEED_PASSWORD);
   return [
     {
       email: 'owner@chai.local',
@@ -95,19 +101,77 @@ function seed(): Promise<readonly CredentialRecord[]> {
   return cachedSeedPromise;
 }
 
-const revokedJTIs = new Set<string>();
+interface LockoutState {
+  failedAttemptCount: number;
+  lockedUntil: Date | null;
+}
 
-export class InMemoryCredentialStore implements CredentialStore {
+export class InMemoryCredentialStore implements CredentialStore, MfaOperations {
+  private readonly revokedJTIs = new Set<string>();
+  private readonly lockouts = new Map<string, LockoutState>();
+  private readonly totpFactors = new Map<string, TotpFactorState>();
+
   async findByEmail(
     email: string,
     audience: Audience,
-  ): Promise<{ record: CredentialRecord } | null> {
+  ): Promise<CredentialLookupResult | null> {
     const records = await seed();
     const normalized = email.trim().toLowerCase();
     const match = records.find(
       (record) => record.email === normalized && record.principal.audience === audience,
     );
-    return match ? { record: match } : null;
+    if (!match) {
+      return null;
+    }
+    return {
+      record: match,
+      lockedUntil: this.lockouts.get(match.principal.id)?.lockedUntil ?? null,
+    };
+  }
+
+  async recordFailedAttempt(userId: string, now = new Date()): Promise<LockoutOutcome> {
+    const current = this.lockouts.get(userId) ?? { failedAttemptCount: 0, lockedUntil: null };
+    const failedAttemptCount = current.failedAttemptCount + 1;
+    const lockedUntil = computeLockedUntil(failedAttemptCount, now);
+    this.lockouts.set(userId, { failedAttemptCount, lockedUntil });
+    return { failedAttemptCount, lockedUntil };
+  }
+
+  async resetFailedAttempts(userId: string): Promise<void> {
+    this.lockouts.delete(userId);
+  }
+
+  async getTotpFactor(userId: string): Promise<TotpFactorState | null> {
+    const factor = this.totpFactors.get(userId);
+    return factor ? { ...factor } : null;
+  }
+
+  async startTotpEnrollment(userId: string, secret: string): Promise<void> {
+    this.totpFactors.set(userId, { confirmedAt: null, lastUsedStep: 0, secret });
+  }
+
+  async confirmTotpFactor(userId: string, usedStep: number): Promise<void> {
+    const factor = this.totpFactors.get(userId);
+    if (!factor) {
+      return;
+    }
+    this.totpFactors.set(userId, {
+      ...factor,
+      confirmedAt: new Date(),
+      lastUsedStep: usedStep,
+    });
+  }
+
+  async markTotpStepUsed(userId: string, step: number): Promise<void> {
+    const factor = this.totpFactors.get(userId);
+    if (!factor) {
+      return;
+    }
+    this.totpFactors.set(userId, { ...factor, lastUsedStep: step });
+  }
+
+  async mfaChallengeRequired(userId: string): Promise<boolean> {
+    return this.totpFactors.get(userId)?.confirmedAt != null;
   }
 
   async recordRefreshToken(
@@ -119,15 +183,15 @@ export class InMemoryCredentialStore implements CredentialStore {
     // until a durable store replaces this implementation.
     void principalId;
     void expiresAt;
-    revokedJTIs.delete(jti);
+    this.revokedJTIs.delete(jti);
   }
 
   async revokeRefreshToken(jti: string): Promise<void> {
-    revokedJTIs.add(jti);
+    this.revokedJTIs.add(jti);
   }
 
   async isRefreshTokenRevoked(jti: string): Promise<boolean> {
-    return revokedJTIs.has(jti);
+    return this.revokedJTIs.has(jti);
   }
 }
 

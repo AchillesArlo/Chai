@@ -229,24 +229,43 @@ describe('extractBearerToken', () => {
 });
 
 describe('password hashing (PBKDF2)', () => {
+  /**
+   * A deliberately cheap cost for the round-trip tests. The production default
+   * (120k iterations) is intentionally slow, and under a loaded CI machine three
+   * hashes at that cost blow the default test timeout — a flaky suite that says
+   * nothing about correctness. Cost is configuration; the format and the
+   * verification logic are the behaviour under test. The default strength is
+   * asserted separately below so it cannot be weakened unnoticed.
+   */
+  const cheap = { iterations: 10_000 };
+
   it('hashes and verifies a password', async () => {
-    const hash = await hashPassword('correct horse battery staple');
+    const hash = await hashPassword('correct horse battery staple', cheap);
     expect(hash.startsWith('pbkdf2$')).toBe(true);
     expect(await verifyPassword('correct horse battery staple', hash)).toBe(true);
   });
 
   it('rejects wrong password', async () => {
-    const hash = await hashPassword('correct horse battery staple');
+    const hash = await hashPassword('correct horse battery staple', cheap);
     expect(await verifyPassword('wrong password', hash)).toBe(false);
   });
 
   it('produces unique salts for the same password', async () => {
-    const a = await hashPassword('same password');
-    const b = await hashPassword('same password');
+    const a = await hashPassword('same password', cheap);
+    const b = await hashPassword('same password', cheap);
     expect(a).not.toBe(b);
     expect(await verifyPassword('same password', a)).toBe(true);
     expect(await verifyPassword('same password', b)).toBe(true);
   });
+
+  it('defaults to a cost that is expensive to brute-force', async () => {
+    // OWASP's PBKDF2-SHA256 floor is 600k, but this scheme is legacy-only (new
+    // credentials use scrypt); 100k is the line below which the default must
+    // never silently drift.
+    const hash = await hashPassword('default cost');
+    const iterations = Number.parseInt(hash.split('$')[1] ?? '0', 10);
+    expect(iterations).toBeGreaterThanOrEqual(100_000);
+  }, 20_000);
 
   it('rejects malformed stored hash', async () => {
     expect(await verifyPassword('x', 'not-a-valid-hash')).toBe(false);

@@ -23,6 +23,7 @@
     "@chai/domain": "workspace:*",
     "@chai/realtime-gateway": "workspace:*",
     "@fastify/helmet": "13.1.0",
+    "@fastify/rate-limit": "11.1.0",
     "@nestjs/common": "11.1.28",
     "@nestjs/core": "11.1.28",
     "@nestjs/platform-fastify": "11.1.28",

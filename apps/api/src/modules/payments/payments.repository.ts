@@ -8,7 +8,7 @@ import {
   type PaymentStatus,
 } from '@chai/connectors/mock-payment';
 
-import { decidePaymentTransition } from './payment-transitions';
+import { decidePaymentTransition } from '@chai/domain';
 
 export abstract class PaymentsRepository {
   abstract createCheckout(

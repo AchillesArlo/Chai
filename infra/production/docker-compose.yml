@@ -19,7 +19,6 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../../packages/database/migrations:/docker-entrypoint-initdb.d:ro
       - ./postgres.conf:/etc/postgresql/postgresql.conf:ro
     command: postgres -c config_file=/etc/postgresql/postgresql.conf
     healthcheck:
@@ -96,13 +95,37 @@ services:
       - backend
 
   # ============================================================================
+  # Database Migrations (one-shot; must complete before API and workers start)
+  # ============================================================================
+
+  # Runs the raw-SQL migrations as the single migration authority. Dependency:
+  # the `migrate` script in @chai/database (added under the database task) —
+  # `pnpm --filter @chai/database run migrate`. Because this now owns schema
+  # setup, the postgres /docker-entrypoint-initdb.d migrations mount was removed
+  # so migrations are not also applied out-of-band on first boot.
+  migrate:
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile
+    command: ["pnpm", "--filter", "@chai/database", "run", "migrate"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - backend
+
+  # ============================================================================
   # API Services
   # ============================================================================
 
   api:
     build:
       context: ../..
-      dockerfile: infra/compose/Dockerfile.dev
+      dockerfile: infra/Dockerfile
     command: ["pnpm", "--filter", "@chai/api", "start"]
     environment:
       NODE_ENV: production
@@ -122,6 +145,8 @@ services:
         condition: service_healthy
       redis-master:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
       interval: 30s
@@ -146,7 +171,7 @@ services:
   realtime-gateway:
     build:
       context: ../..
-      dockerfile: infra/compose/Dockerfile.dev
+      dockerfile: infra/Dockerfile
     command: ["pnpm", "--filter", "@chai/realtime-gateway", "start"]
     environment:
       NODE_ENV: production
@@ -185,8 +210,8 @@ services:
   channel-worker:
     build:
       context: ../..
-      dockerfile: infra/compose/Dockerfile.dev
-    command: ["pnpm", "--filter", "@chai/channel-worker", "start"]
+      dockerfile: infra/Dockerfile
+    command: ["pnpm", "--filter", "@chai/worker-channel-worker", "start"]
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
@@ -199,6 +224,8 @@ services:
         condition: service_healthy
       redis-master:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "pgrep", "-f", "channel-worker"]
       interval: 30s
@@ -222,8 +249,8 @@ services:
   automation-worker:
     build:
       context: ../..
-      dockerfile: infra/compose/Dockerfile.dev
-    command: ["pnpm", "--filter", "@chai/automation-worker", "start"]
+      dockerfile: infra/Dockerfile
+    command: ["pnpm", "--filter", "@chai/worker-automation-worker", "start"]
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
@@ -236,6 +263,8 @@ services:
         condition: service_healthy
       redis-master:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "pgrep", "-f", "automation-worker"]
       interval: 30s
@@ -256,97 +285,40 @@ services:
       - backend
       - monitoring
 
-  payment-worker:
-    build:
-      context: ../..
-      dockerfile: infra/compose/Dockerfile.dev
-    command: ["pnpm", "--filter", "@chai/payment-worker", "start"]
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis-master:6379
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      WORKER_CONCURRENCY: ${PAYMENT_WORKER_CONCURRENCY:-3}
-      ENABLE_METRICS: "true"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis-master:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "pgrep", "-f", "payment-worker"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-    deploy:
-      replicas: 3
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-        reservations:
-          cpus: '1'
-          memory: 1G
-    restart: always
-    networks:
-      - backend
-      - monitoring
-
-  logistics-worker:
-    build:
-      context: ../..
-      dockerfile: infra/compose/Dockerfile.dev
-    command: ["pnpm", "--filter", "@chai/logistics-worker", "start"]
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis-master:6379
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      WORKER_CONCURRENCY: ${LOGISTICS_WORKER_CONCURRENCY:-5}
-      ENABLE_METRICS: "true"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis-master:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "pgrep", "-f", "logistics-worker"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-    deploy:
-      replicas: 3
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-        reservations:
-          cpus: '1'
-          memory: 1G
-    restart: always
-    networks:
-      - backend
-      - monitoring
+  # --------------------------------------------------------------------------
+  # payment-worker / logistics-worker / media-worker are intentionally NOT
+  # deployed yet. Their packages currently expose only pure, unwired helpers
+  # (pollAndReconcile, shouldMarkStale, classifyMediaJob) with no durable job
+  # source: they do not depend on @chai/database, and the mock connector stores
+  # are per-process/in-memory, so a standalone process would have nothing to
+  # reconcile, sweep, or classify. A `start` loop here would be a container that
+  # only pretends to do work, so no `start` script was invented for them.
+  # They return once a real job source lands: a DB-backed session/shipment
+  # repository query (payment, logistics) or an object-storage/media queue
+  # consumer (media) — mirroring how analytics-worker drives the real
+  # runBurnRateHarvest pass below.
+  # --------------------------------------------------------------------------
 
   analytics-worker:
     build:
       context: ../..
-      dockerfile: infra/compose/Dockerfile.dev
-    command: ["pnpm", "--filter", "@chai/analytics-worker", "start"]
+      dockerfile: infra/Dockerfile
+    command: ["pnpm", "--filter", "@chai/worker-analytics-worker", "start"]
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis-master:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WORKER_CONCURRENCY: ${ANALYTICS_WORKER_CONCURRENCY:-3}
+      ANALYTICS_BURN_RATE_INTERVAL_MS: ${ANALYTICS_BURN_RATE_INTERVAL_MS:-60000}
       ENABLE_METRICS: "true"
     depends_on:
       postgres:
         condition: service_healthy
       redis-master:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "pgrep", "-f", "analytics-worker"]
       interval: 30s
@@ -367,11 +339,93 @@ services:
       - backend
       - monitoring
 
+  # Payment reconciliation: polls non-terminal sessions and applies provider
+  # outcomes through the shared transition machine. Single replica by design —
+  # concurrent reconcilers would contend on the same FOR UPDATE rows for no gain.
+  payment-worker:
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile
+    command: ["pnpm", "--filter", "@chai/worker-payment-worker", "start"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PROVIDER_PAYMENT: ${PROVIDER_PAYMENT:-mock}
+      PAYMENT_POLL_INTERVAL_MS: ${PAYMENT_POLL_INTERVAL_MS:-15000}
+      PAYMENT_RECONCILE_BATCH: ${PAYMENT_RECONCILE_BATCH:-50}
+      ENABLE_METRICS: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "payment-worker"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    networks:
+      - backend
+      - monitoring
+
+  # Carrier tracking fallback: re-polls shipments whose last sync exceeded the
+  # SLA and appends deduplicated tracking events.
+  logistics-worker:
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile
+    command: ["pnpm", "--filter", "@chai/worker-logistics-worker", "start"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PROVIDER_LOGISTICS: ${PROVIDER_LOGISTICS:-mock}
+      LOGISTICS_POLL_INTERVAL_MS: ${LOGISTICS_POLL_INTERVAL_MS:-30000}
+      LOGISTICS_SLA_MS: ${LOGISTICS_SLA_MS:-21600000}
+      LOGISTICS_RECONCILE_BATCH: ${LOGISTICS_RECONCILE_BATCH:-50}
+      ENABLE_METRICS: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "logistics-worker"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    restart: always
+    networks:
+      - backend
+      - monitoring
+
   inbox-dispatcher:
     build:
       context: ../..
-      dockerfile: infra/compose/Dockerfile.dev
-    command: ["pnpm", "--filter", "@chai/inbox-dispatcher", "start"]
+      dockerfile: infra/Dockerfile
+    command: ["pnpm", "--filter", "@chai/worker-inbox-dispatcher", "start"]
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
@@ -383,6 +437,8 @@ services:
         condition: service_healthy
       redis-master:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "pgrep", "-f", "inbox-dispatcher"]
       interval: 30s
@@ -406,8 +462,8 @@ services:
   outbox-dispatcher:
     build:
       context: ../..
-      dockerfile: infra/compose/Dockerfile.dev
-    command: ["pnpm", "--filter", "@chai/outbox-dispatcher", "start"]
+      dockerfile: infra/Dockerfile
+    command: ["pnpm", "--filter", "@chai/worker-outbox-dispatcher", "start"]
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
@@ -419,6 +475,8 @@ services:
         condition: service_healthy
       redis-master:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "pgrep", "-f", "outbox-dispatcher"]
       interval: 30s
@@ -439,42 +497,8 @@ services:
       - backend
       - monitoring
 
-  media-worker:
-    build:
-      context: ../..
-      dockerfile: infra/compose/Dockerfile.dev
-    command: ["pnpm", "--filter", "@chai/media-worker", "start"]
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis-master:6379
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      WORKER_CONCURRENCY: ${MEDIA_WORKER_CONCURRENCY:-3}
-      ENABLE_METRICS: "true"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis-master:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "pgrep", "-f", "media-worker"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-    deploy:
-      replicas: 2
-      resources:
-        limits:
-          cpus: '2'
-          memory: 4G
-        reservations:
-          cpus: '1'
-          memory: 2G
-    restart: always
-    networks:
-      - backend
-      - monitoring
+  # media-worker: intentionally not deployed — see the disabled-workers note
+  # above the analytics-worker service for the rationale and upgrade path.
 
   # ============================================================================
   # Frontend Services
@@ -483,7 +507,7 @@ services:
   owner-console:
     build:
       context: ../..
-      dockerfile: infra/compose/Dockerfile.dev
+      dockerfile: infra/Dockerfile
     command: ["pnpm", "--filter", "@chai/owner-console", "start"]
     environment:
       NODE_ENV: production
@@ -514,7 +538,7 @@ services:
   client-portal:
     build:
       context: ../..
-      dockerfile: infra/compose/Dockerfile.dev
+      dockerfile: infra/Dockerfile
     command: ["pnpm", "--filter", "@chai/client-portal", "start"]
     environment:
       NODE_ENV: production

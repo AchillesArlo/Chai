@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   decidePaymentTransition,
   isTerminalPaymentStatus,
-} from './payment-transitions';
+} from '@chai/domain';
 
 /**
  * Fase 2 (R-10) regression: a verified webhook is still not allowed to undo a
