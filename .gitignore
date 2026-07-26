@@ -46,3 +46,6 @@ graphify-out/
 # the history.
 .brainsync/
 .cursor/
+
+# TypeScript incremental build cache: regenerated on every typecheck.
+*.tsbuildinfo

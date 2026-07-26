@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import type { AiCitation, KnowledgeDocument } from '@chai/connectors/mock-ai';
 
+import { scanForPromptInjection } from './guardrails';
+
 // ponytail: RAG pipeline with in-memory cosine similarity.
 // Swap the retriever for pgvector when persistence is needed.
 
@@ -21,6 +23,13 @@ export interface RagRetrievalRequest {
 export interface RagRetrievalResult {
   citations: AiCitation[];
   context: string;
+  /**
+   * True when a retrieved document carried a prompt-injection pattern. The
+   * decision is recorded on the turn, not swallowed (08_AI §9, §12 / R-11).
+   */
+  injectionDetected: boolean;
+  /** Names of the injection patterns found across the retrieved documents. */
+  injectionPatterns: string[];
   retrievedDocuments: KnowledgeDocument[];
 }
 
@@ -102,14 +111,45 @@ export class InMemoryRagRetriever implements RagRetriever {
   }
 }
 
+interface ScannedDocuments {
+  context: string;
+  injectionDetected: boolean;
+  injectionPatterns: string[];
+}
+
 /**
- * Build a RAG context string from retrieved documents.
+ * Scan every retrieved document and fold them into one numbered context block.
+ *
+ * Retrieved documents are UNTRUSTED (08_AI §9, §12): they live in a tenant's
+ * knowledge base, which anyone with write access to that base can poison. This
+ * is the single function that turns a document into prompt text, and it always
+ * routes each document through `scanForPromptInjection` — so a document can only
+ * ever reach the model wrapped as data, never as an instruction, and there is no
+ * argument a caller can pass to opt out.
+ */
+function scanDocuments(documents: KnowledgeDocument[]): ScannedDocuments {
+  const patterns = new Set<string>();
+  const blocks = documents.map((doc, i) => {
+    const scan = scanForPromptInjection(doc.text, `knowledge:${doc.id}`);
+    for (const name of scan.patterns) {
+      patterns.add(name);
+    }
+    // Keep the [n] index so citations still line up with the wrapped block.
+    return `[${i + 1}]\n${scan.safeContent}`;
+  });
+  return {
+    context: blocks.join('\n\n'),
+    injectionDetected: patterns.size > 0,
+    injectionPatterns: [...patterns],
+  };
+}
+
+/**
+ * Build a RAG context string from retrieved documents. Every document is wrapped
+ * as untrusted data before it can enter the context.
  */
 export function buildRagContext(documents: KnowledgeDocument[]): string {
-  if (documents.length === 0) return '';
-  return documents
-    .map((doc, i) => `[${i + 1}] ${doc.text}`)
-    .join('\n\n');
+  return scanDocuments(documents).context;
 }
 
 /**
@@ -135,12 +175,14 @@ export async function runRagPipeline(
   request: RagRetrievalRequest
 ): Promise<RagRetrievalResult> {
   const documents = await retriever.retrieve(request);
-  const context = buildRagContext(documents);
+  const scanned = scanDocuments(documents);
   const citations = documentsToCitations(documents);
 
   return {
     citations,
-    context,
+    context: scanned.context,
+    injectionDetected: scanned.injectionDetected,
+    injectionPatterns: scanned.injectionPatterns,
     retrievedDocuments: documents,
   };
 }

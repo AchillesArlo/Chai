@@ -165,7 +165,28 @@ Bukti eksekusi terakhir, semuanya exit 0:
 | root `tests/` (termasuk guard boundary) | 164 lulus + 9 skip |
 | Migrasi | 46/46 diterapkan bersih |
 
-Yang **belum** tertutup dan sengaja dicatat sebagai utang, bukan diklaim selesai: pipeline RAG belum memanggil `scanForPromptInjection` secara wajib, retrieval belum hybrid dengan pgvector, `withSpan` belum ditaburkan ke jalur bisnis, burn-rate belum punya job pemanen sampel, endpoint balasan percakapan belum ada, dan `.github/workflows/ci.yml` belum pernah dieksekusi runner karena repo ini tanpa remote git. Rincian per fase ada di catatan jujur masing-masing bagian di bawah.
+Yang **belum** tertutup dan sengaja dicatat sebagai utang, bukan diklaim selesai: retrieval belum hybrid dengan pgvector, `withSpan` belum ditaburkan ke jalur bisnis, dan `.github/workflows/ci.yml` belum pernah dieksekusi runner. Rincian per fase ada di catatan jujur masing-masing bagian di bawah, dan status pekerjaan pasca-fase ada di bagian berikut.
+
+---
+
+## 1b. Gelombang 1 pasca-baseline — 26 Jul 2026
+
+Dikerjakan tiga agen paralel dengan kepemilikan berkas terpisah, di atas commit baseline `d9b2746`, lalu satu verifikasi gabungan oleh auditor independen. 18 berkas berubah, **nol pelanggaran cakupan** (dibuktikan `git status --porcelain`).
+
+| Pekerjaan | Status | Bukti |
+|---|---|---|
+| Injection guard wajib di pipeline RAG | **SELESAI, dengan batasan** | `services/ai-gateway/src/rag.ts`: `scanDocuments` privat kini **satu-satunya** jalur dokumen menjadi teks prompt, dan ia selalu memanggil `scanForPromptInjection`; `buildRagContext` dan `runRagPipeline` mendelegasikan ke sana tanpa parameter opt-out. `prompt-context.ts` baru: `assembleTurnPrompt` memindai setiap konten eksternal dalam satu loop, dan `ROLE_BY_KIND` adalah `Record` total sehingga menambah jenis konten baru menjadi **compile error**. 94 → **103 tes**. |
+| Endpoint balasan percakapan | **SELESAI** | `POST api/client/v1/conversations/:id/messages` dengan `@RequireAudience('client-portal')` + `@RequirePermission('conversation.respond')`, tanpa entitlement agar core tetap jalan dengan modul opsional mati. `sendMessage` membungkus semuanya dalam **satu** `withTenantTransaction`: claim idempotency → version guard → `commitBusinessMutation` (pesan `OUTBOUND`/`HUMAN` + audit + event `message.created`) → `settleOperation`. **Tidak ada panggilan provider di request path** — pengiriman nyata diserahkan ke worker lewat outbox. 116 → **121 tes e2e**. |
+| Pemanen sampel burn-rate | **SELESAI, dengan batasan** | `packages/domain/src/slo/outbox-sli.ts` memanen dari `chai.outbox_event` nyata: `decided` = status `PUBLISHED`/`DEAD_LETTER`, `bad` = `DEAD_LETTER`, di-bucket per window trailing. Window tanpa data menjadi `notEvaluated`, **bukan** sehat. Tanpa `Math.random`, tanpa konstanta placeholder. Domain 146 → **150 tes**, analytics-worker **4 tes**. |
+
+Gate setelah gelombang ini, semuanya exit 0: `pnpm run lint` 24/24 · `pnpm run typecheck` 24/24 · `apps/api` 199 unit / **121** e2e / 71 integrasi · `packages/domain` **150** + 46 integrasi · `services/ai-gateway` **103** · sisanya tidak berubah. Tidak ada jumlah tes yang turun, tidak ada `eslint-disable` baru, tidak ada `any` baru, tidak ada tes di-skip.
+
+**Dua batasan yang harus diketahui sebelum mengklaim jalur AI aman:**
+
+1. **`services/ai-gateway` tidak dipanggil siapa pun di luar tesnya.** Grep terhadap seluruh `apps/*/src`, `workers/*/src`, dan `packages/*/src` menemukan **nol** pemanggil `assembleTurnPrompt`, `runRagPipeline`, dan `buildRagContext`. Repo belum punya orkestrator AI runtime; jalur knowledge di `apps/api` terpisah dan tidak mengimpor RAG gateway. Jadi guard ini tidak bisa dilewati oleh **pemanggil modul**, tapi belum melindungi turn AI produksi — karena turn AI produksi belum ada. Ini utang arsitektur, bukan utang guard.
+2. **`runBurnRateHarvest` belum dipanggil proses berjalan.** `workers/analytics-worker` tidak punya `main.ts` maupun skrip `start` — sama seperti `payment-worker`, `logistics-worker`, `media-worker`, dan `temporal`. Lima dari sembilan worker berbentuk pustaka, bukan proses. Menjadikannya proses berjalan butuh keputusan runner/scheduler yang belum ada konvensinya di repo.
+
+Pembersihan tambahan: `apps/client-portal/tsconfig.tsbuildinfo` dan `apps/owner-console/tsconfig.tsbuildinfo` dikeluarkan dari git (`*.tsbuildinfo` masuk `.gitignore`) — cache build inkremental yang berubah setiap `typecheck`.
 
 ---
 

@@ -12,6 +12,10 @@
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "test": "vitest run --root . --passWithNoTests"
   },
+  "dependencies": {
+    "@chai/database": "workspace:*",
+    "@chai/domain": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "24.13.3",
     "typescript": "6.0.3",

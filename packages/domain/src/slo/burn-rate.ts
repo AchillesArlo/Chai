@@ -2,6 +2,10 @@
 // nullable column any caller could set to any number, so an alert could not be
 // traced back to an objective — and nothing computed it.
 
+// Re-exported here (rather than from the package index) so the outbox-delivery
+// SLI harvester ships through the existing `export * from './slo/burn-rate'`.
+export * from './outbox-sli';
+
 /** A service level objective, e.g. 99.9% availability over 30 days. */
 export interface SloObjective {
   /** Target success ratio in (0,1), e.g. 0.999. */

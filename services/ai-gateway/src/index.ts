@@ -36,6 +36,7 @@ export * from './guardrails';
 export * from './cost-accounting';
 export * from './conversation-state';
 export * from './tool-execution';
+export * from './prompt-context';
 
 /**
  * Create an AI gateway that wraps an adapter with alias resolution,

@@ -40,6 +40,42 @@ export interface IngestOutcome {
   duplicate: boolean;
 }
 
+/**
+ * Operator (human) reply to send on a conversation.
+ *
+ * `idempotencyKey` is the caller-supplied `Idempotency-Key` header: the actual
+ * send to the provider is a worker's job via the outbox, and the platform must
+ * never emit two outbound messages for one keyed request (ADR-007, 06_API §5).
+ */
+export interface SendMessageInput {
+  idempotencyKey: string;
+  text: string;
+}
+
+/** A recorded outbound message on the conversation aggregate. */
+export interface OutboundMessageSummary {
+  contentType: string;
+  conversationId: string;
+  createdAt: Date;
+  direction: string;
+  id: string;
+  senderType: string;
+  text: string | null;
+}
+
+/**
+ * Result of an operator reply.
+ *
+ * `duplicate` marks a replay of an earlier keyed request: the same message is
+ * returned and no second effect ran. `idempotency_conflict` is the same key
+ * reused with a different body (06_API §5 IDEMPOTENCY_CONFLICT).
+ */
+export type SendMessageResult =
+  | { kind: 'ok'; duplicate: boolean; message: OutboundMessageSummary }
+  | { kind: 'not_found' }
+  | { kind: 'version_conflict' }
+  | { kind: 'idempotency_conflict' };
+
 export abstract class ConversationRepository {
   abstract ingest(event: InboundEvent): Promise<IngestOutcome>;
   abstract listConversations(
@@ -62,4 +98,16 @@ export abstract class ConversationRepository {
     conversationId: string,
     expectedVersion: number,
   ): Promise<AssignmentResult>;
+  /**
+   * Records an operator (human) reply on the conversation aggregate and enqueues
+   * the outbound send via the transactional outbox. The provider call itself is
+   * a worker's job — the request never talks to a provider directly.
+   */
+  abstract sendMessage(
+    tenantId: string,
+    conversationId: string,
+    operatorId: string,
+    expectedVersion: number,
+    input: SendMessageInput,
+  ): Promise<SendMessageResult>;
 }

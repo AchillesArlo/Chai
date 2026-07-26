@@ -1,11 +1,15 @@
 import { randomUUID } from 'node:crypto';
 
 import type { InboundEvent } from '@chai/connector-sdk';
+import { requestHash } from '@chai/domain';
 
 import type {
   AssignmentResult,
   ConversationSummary,
   IngestOutcome,
+  OutboundMessageSummary,
+  SendMessageInput,
+  SendMessageResult,
 } from '../shared/conversation.port';
 import { ConversationRepository } from '../shared/conversation.port';
 
@@ -20,6 +24,24 @@ interface ConversationRecord {
   status: string;
   tenantId: string;
   version: number;
+}
+
+interface OutboundMessageRecord extends OutboundMessageSummary {
+  tenantId: string;
+}
+
+/** Mirrors one row the transactional outbox would carry for a reply. */
+interface RecordedReplyEvent {
+  aggregateVersion: number;
+  conversationId: string;
+  eventType: string;
+  messageId: string;
+  tenantId: string;
+}
+
+interface ReplyIdempotencyRecord {
+  messageId: string;
+  requestHash: string;
 }
 
 /**
@@ -37,6 +59,15 @@ export class InMemoryConversationRepository extends ConversationRepository {
    * redelivery exactly like the database path does.
    */
   private readonly seenProviderEvents = new Set<string>();
+  /** Outbound messages, so a reply and its dedup can be asserted end to end. */
+  private readonly messages: OutboundMessageRecord[] = [];
+  /** Stands in for the transactional outbox rows a reply commits. */
+  private readonly replyEvents: RecordedReplyEvent[] = [];
+  /**
+   * Stands in for chai.idempotency_record: same key + same body replays the
+   * first message, same key + different body is a conflict.
+   */
+  private readonly replyIdempotency = new Map<string, ReplyIdempotencyRecord>();
 
   override async ingest(event: InboundEvent): Promise<IngestOutcome> {
     const eventKey = `${event.tenantId}:${event.provider}:${event.channelAccount}:${event.externalEventId}`;
@@ -129,6 +160,82 @@ export class InMemoryConversationRepository extends ConversationRepository {
     record.mode = 'PAUSED';
     record.version += 1;
     return { kind: 'ok', conversation: this.toSummary(record) };
+  }
+
+  override async sendMessage(
+    tenantId: string,
+    conversationId: string,
+    operatorId: string,
+    expectedVersion: number,
+    input: SendMessageInput,
+  ): Promise<SendMessageResult> {
+    // Idempotency is resolved before the precondition, exactly like the database
+    // path: a replay must return the first outcome even if the caller retries
+    // with a now-stale version, so it can never surface as a version conflict.
+    const claimKey = `${tenantId}:client-portal:conversation.reply:${input.idempotencyKey}`;
+    const hash = requestHash({ conversationId, contentType: 'TEXT', text: input.text });
+    const claimed = this.replyIdempotency.get(claimKey);
+    if (claimed) {
+      if (claimed.requestHash !== hash) return { kind: 'idempotency_conflict' };
+      const original = this.messages.find((message) => message.id === claimed.messageId);
+      if (!original) return { kind: 'not_found' };
+      return { kind: 'ok', duplicate: true, message: this.toMessageSummary(original) };
+    }
+
+    const record = this.find(tenantId, conversationId);
+    if (!record) return { kind: 'not_found' };
+    if (record.version !== expectedVersion) return { kind: 'version_conflict' };
+
+    // Business mutation + outbox event advance together, as they must in one
+    // transaction on the database path.
+    record.version += 1;
+    record.lastMessageAt = new Date();
+    const message: OutboundMessageRecord = {
+      contentType: 'TEXT',
+      conversationId,
+      createdAt: new Date(),
+      direction: 'OUTBOUND',
+      id: randomUUID(),
+      senderType: 'HUMAN',
+      tenantId,
+      text: input.text,
+    };
+    this.messages.push(message);
+    this.replyIdempotency.set(claimKey, { messageId: message.id, requestHash: hash });
+    this.replyEvents.push({
+      aggregateVersion: record.version,
+      conversationId,
+      eventType: 'message.created',
+      messageId: message.id,
+      tenantId,
+    });
+    // operatorId is the human actor; recorded HUMAN (never AI) on the message.
+    void operatorId;
+    return { kind: 'ok', duplicate: false, message: this.toMessageSummary(message) };
+  }
+
+  /** Test view: outbound messages recorded on a conversation. */
+  messagesFor(conversationId: string): OutboundMessageSummary[] {
+    return this.messages
+      .filter((message) => message.conversationId === conversationId)
+      .map((message) => this.toMessageSummary(message));
+  }
+
+  /** Test view: reply outbox events recorded for a conversation. */
+  replyEventsFor(conversationId: string): RecordedReplyEvent[] {
+    return this.replyEvents.filter((event) => event.conversationId === conversationId);
+  }
+
+  private toMessageSummary(record: OutboundMessageRecord): OutboundMessageSummary {
+    return {
+      contentType: record.contentType,
+      conversationId: record.conversationId,
+      createdAt: record.createdAt,
+      direction: record.direction,
+      id: record.id,
+      senderType: record.senderType,
+      text: record.text,
+    };
   }
 
   private find(tenantId: string, conversationId: string): ConversationRecord | undefined {

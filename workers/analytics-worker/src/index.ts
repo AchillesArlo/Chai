@@ -2,6 +2,8 @@
  * Analytics projection worker. Stage 1: fold metric events into a counter map.
  * Full materialised views wait on the fact-table migration.
  */
+export * from './burn-rate-harvester';
+
 export interface MetricEvent {
   name: string;
   tenantId: string;

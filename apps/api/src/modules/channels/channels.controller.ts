@@ -1,7 +1,11 @@
 import {
   BadRequestException,
+  Body,
+  ConflictException,
   Controller,
   Get,
+  Headers,
+  HttpCode,
   Inject,
   NotFoundException,
   Param,
@@ -10,14 +14,32 @@ import {
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 
+import { IsNotEmpty, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+
 import { RequireAudience } from '../../auth/require-audience.decorator';
+import { resolveExpectedVersion } from '../../common/concurrency';
 import { RequirePermission } from '../../guards/require-permission.decorator';
 import { adapterFor } from './channel-adapters';
 import {
   ConversationRepository,
   type ConversationSummary,
+  type OutboundMessageSummary,
 } from '../shared/conversation.port';
 import { RealtimePublisher } from './realtime-publisher';
+
+/** Operator reply body. `Idempotency-Key` travels as a header, not a field. */
+class SendMessageBody {
+  /** Compatibility fallback; `If-Match` is the canonical precondition (06_API §3). */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  expectedVersion?: number;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(4096)
+  text!: string;
+}
 
 @Controller('api')
 export class ChannelsController {
@@ -95,5 +117,41 @@ export class ChannelsController {
       context.tenantId,
       context.principalId,
     );
+  }
+
+  @Post('client/v1/conversations/:id/messages')
+  @RequireAudience('client-portal')
+  @RequirePermission('conversation.respond')
+  @HttpCode(201)
+  async sendMessage(
+    @Param('id') id: string,
+    @Body() body: SendMessageBody,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: FastifyRequest,
+  ): Promise<OutboundMessageSummary> {
+    const context = request.tenantContext;
+    if (!context) throw new NotFoundException();
+    if (!idempotencyKey) {
+      // The global interceptor already enforces this; a send to a customer must
+      // never proceed without a dedup key, so the controller refuses too.
+      throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED' });
+    }
+    const result = await this.repository.sendMessage(
+      context.tenantId,
+      id,
+      context.principalId,
+      resolveExpectedVersion(request, body.expectedVersion),
+      { idempotencyKey, text: body.text },
+    );
+    switch (result.kind) {
+      case 'not_found':
+        throw new NotFoundException();
+      case 'version_conflict':
+        throw new ConflictException({ code: 'VERSION_CONFLICT' });
+      case 'idempotency_conflict':
+        throw new ConflictException({ code: 'IDEMPOTENCY_CONFLICT' });
+      case 'ok':
+        return result.message;
+    }
   }
 }
