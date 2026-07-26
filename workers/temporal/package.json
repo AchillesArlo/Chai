@@ -1,0 +1,34 @@
+{
+  "name": "@chai/worker-temporal",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./worker": "./src/worker.ts",
+    "./workflows": "./src/workflows/index.ts",
+    "./activities": "./src/activities/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "start:worker": "tsx src/worker.ts",
+    "test": "vitest run --root . --passWithNoTests"
+  },
+  "dependencies": {
+    "@chai/connectors": "workspace:*",
+    "@temporalio/activity": "^1.11.7",
+    "@temporalio/client": "^1.11.7",
+    "@temporalio/worker": "^1.11.7",
+    "@temporalio/workflow": "^1.11.7",
+    "nanoid": "^5.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "tsx": "^4.19.4",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}

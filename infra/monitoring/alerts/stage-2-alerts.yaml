@@ -1,0 +1,72 @@
+groups:
+  - name: chai-stage2-workers
+    rules:
+      - alert: FollowUpJobBacklogHigh
+        expr: sum(chai_follow_up_job_queue{status="PENDING"}) > 100
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Follow-up job PENDING backlog above 100
+          runbook: docs/runbooks/automation-worker.md
+
+      - alert: FollowUpJobFailedSpike
+        expr: increase(chai_follow_up_job_total{status="FAILED"}[1h]) > 10
+        for: 0m
+        labels:
+          severity: page
+        annotations:
+          summary: More than 10 follow-up jobs FAILED in the last hour
+          runbook: docs/runbooks/automation-worker.md
+
+      - alert: FollowUpJobStuckClaimed
+        expr: sum(chai_follow_up_job_queue{status="CLAIMED"} offset 5m) > 0
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Follow-up jobs stuck in CLAIMED past 5 minutes
+          runbook: docs/runbooks/automation-worker.md
+
+      - alert: KnowledgeFailedDocsHigh
+        expr: increase(chai_knowledge_document_total{status="FAILED"}[1h]) > 5
+        for: 0m
+        labels:
+          severity: ticket
+        annotations:
+          summary: More than 5 knowledge docs FAILED in the last hour
+          runbook: docs/runbooks/knowledge-ingest.md
+
+      - alert: RealtimeGatewayDown
+        expr: up{job="chai-realtime"} == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: Realtime gateway not reachable on :3010
+          runbook: docs/runbooks/realtime-gateway.md
+
+      - alert: RealtimeIngestErrorRateHigh
+        expr: |
+          sum(rate(chai_realtime_ingest_errors_total[5m]))
+            / clamp_min(sum(rate(chai_realtime_ingest_total[5m])), 1) > 0.05
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: Realtime gateway ingest error rate above 5%
+          runbook: docs/runbooks/realtime-gateway.md
+
+      - alert: RealtimeSseConnectionsMissing
+        expr: chai_realtime_sse_active_connections == 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Zero SSE clients during business hours — clients may be failing to connect
+          runbook: docs/runbooks/realtime-gateway.md
+# ponytail: alert thresholds (backlog>100, failed>10/1h, etc.) are first-guess
+# values; tune after the Stage 2 load test publishes real p95/saturation numbers.
+# ponytail: RealtimeSseConnectionsMissing needs a business-hours guard once a
+# timezone is defined; firing at 3am on a quiet tenant is noise. Add time()
+# filter when on-call rota confirms hours.

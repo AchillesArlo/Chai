@@ -1,0 +1,38 @@
+groups:
+  - name: chai-stage1-pilot
+    rules:
+      - alert: SuspectedCrossTenantExposure
+        expr: increase(chai_isolation_violation_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: page
+        annotations:
+          summary: Suspected cross-tenant exposure
+          runbook: docs/runbooks/isolation-incident.md
+
+      - alert: DatabaseUnavailable
+        expr: up{service="api"} == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: API/database path unavailable
+          runbook: docs/runbooks/rollback.md
+
+      - alert: WebhookIngestFailures
+        expr: rate(chai_webhook_reject_total[5m]) > 1
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Elevated webhook rejection rate
+          runbook: docs/runbooks/provider-outage.md
+
+      - alert: InboxQueueLag
+        expr: chai_inbox_pending_age_seconds > 300
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Inbox queue lag above 5 minutes
+          runbook: docs/runbooks/provider-outage.md

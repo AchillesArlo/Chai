@@ -1,0 +1,18 @@
+{
+    "smoke":  0,
+    "audit":  1,
+    "integration":  0,
+    "test":  0,
+    "lint":  0,
+    "backup_drill":  0,
+    "typecheck":  0,
+    "e2e":  0,
+    "date":  "2026-07-19",
+    "notes":  [
+                  "lint: scripts/** ignored for node .mjs pilot globals",
+                  "e2e: 65 passed @chai/api",
+                  "smoke: 3 passed",
+                  "audit: 1 moderate postcss via next (deferred)",
+                  "backup-drill: scripted evidence JSON only"
+              ]
+}

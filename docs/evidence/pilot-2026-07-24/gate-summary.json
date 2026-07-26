@@ -1,0 +1,35 @@
+{
+  "date": "2026-07-24",
+  "failed": true,
+  "results": [
+    {
+      "name": "lint",
+      "exit": 1
+    },
+    {
+      "name": "typecheck",
+      "exit": 0
+    },
+    {
+      "name": "test",
+      "exit": 0
+    },
+    {
+      "name": "integration",
+      "exit": 0
+    },
+    {
+      "name": "e2e",
+      "exit": 0
+    },
+    {
+      "name": "smoke",
+      "exit": 0
+    },
+    {
+      "name": "audit",
+      "exit": 1
+    }
+  ],
+  "timestamp": "2026-07-24T05:39:52.596Z"
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@chai/worker-channel-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json --noEmit",
+    "lint": "eslint src test",
+    "start": "node --import tsx/esm src/main.ts",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "vitest run --root . --passWithNoTests"
+  },
+  "dependencies": {
+    "@chai/database": "workspace:*",
+    "@chai/domain": "workspace:*",
+    "@chai/worker-inbox-dispatcher": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "tsx": "4.23.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}

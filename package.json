@@ -1,0 +1,50 @@
+{
+  "name": "chai-platform",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.13.1",
+  "engines": {
+    "node": ">=24.12.0 <25",
+    "pnpm": "11.13.1"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "eslint . && turbo run lint",
+    "typecheck": "tsc --project tsconfig.json --noEmit && turbo run typecheck",
+    "test": "vitest run tests && turbo run test",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:s1": "vitest run --config vitest.integration.config.ts",
+    "test:s2": "vitest run --config vitest.integration.config.ts tests/staging",
+    "test:s3": "vitest run --config vitest.integration.config.ts tests/load",
+    "test:s4": "vitest run --config vitest.integration.config.ts tests/chaos",
+    "test:s5": "vitest run --config vitest.integration.config.ts tests/pentest",
+    "test:s-series": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "turbo run test:e2e",
+    "test:smoke": "playwright test",
+    "test:workspace": "vitest run tests/workspace-structure.test.ts",
+    "pilot:gate": "node scripts/pilot/run-gate.mjs",
+    "pilot:load": "node scripts/pilot/load-drill.mjs",
+    "pilot:backup-drill": "node scripts/pilot/backup-restore-drill.mjs",
+    "pilot:soak": "node scripts/pilot/soak-test-runner.mjs",
+    "seed:api": "node scripts/seed-api-runtime.mjs"
+  },
+  "dependencies": {
+    "@chai/connectors": "workspace:*",
+    "@chai/domain": "workspace:*",
+    "@chai/realtime-gateway": "workspace:*"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.61.1",
+    "@types/node": "24.13.3",
+    "@vitest/coverage-v8": "4.1.10",
+    "eslint": "10.7.0",
+    "pnpm": "11.13.1",
+    "turbo": "2.10.5",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.64.0",
+    "vite": "8.1.5",
+    "vitest": "4.1.10"
+  }
+}

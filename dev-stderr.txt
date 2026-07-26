@@ -1,0 +1,1 @@
+$ cross-env APP_ENV=local next dev --port 3000

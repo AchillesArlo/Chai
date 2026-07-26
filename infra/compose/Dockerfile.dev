@@ -1,0 +1,21 @@
+# ponytail: shared development image for the Chai monorepo. It installs pinned
+# Node + pnpm, restores the workspace, and defers the start command to the
+# compose service. Production replaces this with per-app multi-stage builds
+# (see infra/opentofu, Task 14 pilot gate).
+FROM node:24.12.0-alpine
+
+RUN apk add --no-cache git \
+    && corepack enable \
+    && corepack prepare pnpm@11.13.1 --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
+COPY packages ./packages
+COPY apps ./apps
+COPY workers ./workers
+COPY services ./services
+
+RUN pnpm install --frozen-lockfile --prefer-offline
+
+ENV APP_ENV=local

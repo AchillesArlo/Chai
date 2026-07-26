@@ -1,0 +1,23 @@
+{
+  "metrics": {
+    "t-pilot-1": {
+      "conversations": {
+        "recordedAt": "2026-07-24T04:21:24.988Z",
+        "value": 12
+      },
+      "slaCompliance": {
+        "recordedAt": "2026-07-24T04:21:25.063Z",
+        "value": 97
+      }
+    }
+  },
+  "tenants": {
+    "t-pilot-1": {
+      "name": "Acme Corp",
+      "onboardedAt": "2026-07-24T04:21:18.961Z",
+      "plan": "stage-1",
+      "pilotEndsAt": "2026-08-07T04:21:18.962Z",
+      "status": "active"
+    }
+  }
+}

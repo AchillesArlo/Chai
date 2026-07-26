@@ -1,0 +1,28 @@
+{
+  "drill": "backup-restore-and-redis-loss",
+  "note": "Stage 1 records procedure + automated isolation e2e as evidence. Full timed restore is an ops exercise against staging.",
+  "steps": [
+    {
+      "id": "pg-dump",
+      "instruction": "pg_dump $DATABASE_URL > backup-$(date +%F).sql  (staging synthetic only)",
+      "status": "DOCUMENTED"
+    },
+    {
+      "id": "restore-fresh",
+      "instruction": "Create empty DB, psql < backup.sql, re-run pnpm test:integration",
+      "status": "DOCUMENTED"
+    },
+    {
+      "id": "rpo-rto",
+      "instruction": "Record RPO/RTO targets in ops runbook for pilot tenant",
+      "status": "DOCUMENTED"
+    },
+    {
+      "id": "redis-loss",
+      "instruction": "Stop Redis container; confirm API accepts writes; restore Redis; no duplicate side effects",
+      "status": "DOCUMENTED"
+    }
+  ],
+  "timestamp": "2026-07-24T05:51:09.758Z",
+  "automatedIsolationSuite": "pnpm test:e2e isolation + chaos suites"
+}

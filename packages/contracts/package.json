@@ -1,0 +1,25 @@
+{
+  "name": "@chai/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "vitest run --root .",
+    "schema:generate": "tsx src/generate-json-schema.ts"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "tsx": "4.23.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}

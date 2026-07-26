@@ -1,0 +1,85 @@
+# Chai Stage 1 — full stack development composition.
+#
+# Brings up the authoritative Postgres + Redis, applies migrations, and runs
+# the API, realtime gateway, owner console, and client portal together so the
+# platform is exercisable end-to-end locally.
+#
+# Usage:
+#   docker compose -f infra/compose/docker-compose.yml up --build
+#
+# ponytail: production images use pinned multi-stage builds and managed
+# Postgres/Redis (see infra/opentofu + infra/monitoring, Task 14 pilot gate).
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: chai
+      POSTGRES_USER: chai_admin
+      POSTGRES_PASSWORD: synthetic-admin-password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../packages/database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chai_admin -d chai"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.dev
+    command: ["pnpm", "--filter", "@chai/api", "dev"]
+    environment:
+      APP_ENV: local
+      DATABASE_URL: postgres://chai_admin:synthetic-admin-password@postgres:5432/chai
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+  realtime-gateway:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.dev
+    command: ["pnpm", "--filter", "@chai/realtime-gateway", "start"]
+    environment:
+      REALTIME_PORT: "3010"
+    ports:
+      - "3010:3010"
+
+  owner-console:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.dev
+    command: ["pnpm", "--filter", "@chai/owner-console", "dev"]
+    environment:
+      APP_ENV: local
+    ports:
+      - "3001:3000"
+
+  client-portal:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.dev
+    command: ["pnpm", "--filter", "@chai/client-portal", "dev"]
+    environment:
+      APP_ENV: local
+    ports:
+      - "3002:3002"
+
+volumes:
+  postgres_data:

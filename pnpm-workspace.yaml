@@ -1,0 +1,22 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  - 'workers/*'
+  - 'services/*'
+
+nodeVersion: '24.12.0'
+saveExact: true
+strictDepBuilds: true
+
+allowBuilds:
+  '@scarf/scarf': false
+  '@swc/core': true
+  cpu-features: false
+  esbuild: true
+  protobufjs: false
+  sharp: true
+  ssh2: false
+
+minimumReleaseAgeExclude:
+  - vite@8.1.5
+  - pnpm@11.13.1

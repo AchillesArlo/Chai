@@ -1,0 +1,37 @@
+{
+  "name": "@chai/connectors",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./factory": "./src/factory.ts",
+    "./kill-switch": "./src/kill-switch.ts",
+    "./mock-ai": "./src/connectors/mock-ai/index.ts",
+    "./openai": "./src/connectors/openai/index.ts",
+    "./anthropic": "./src/connectors/anthropic/index.ts",
+    "./mock-calendar": "./src/connectors/mock-calendar/index.ts",
+    "./mock-channel": "./src/connectors/mock-channel/index.ts",
+    "./mock-payment": "./src/connectors/mock-payment/index.ts",
+    "./mock-shipping": "./src/connectors/mock-shipping/index.ts",
+    "./google-calendar": "./src/connectors/google-calendar/index.ts",
+    "./midtrans": "./src/connectors/midtrans/index.ts",
+    "./jne": "./src/connectors/jne/index.ts",
+    "./whatsapp-meta-sandbox": "./src/connectors/whatsapp-meta-sandbox/index.ts",
+    "./whatsapp-meta": "./src/connectors/whatsapp-meta/index.ts",
+    "./conformance": "./src/conformance/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run --root .",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@chai/connector-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  }
+}

@@ -1,0 +1,30 @@
+# Stage 1 scrape config — synthetic local targets.
+# ponytail: swap hostnames for the managed mesh when staging is provisioned.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: chai-api
+    static_configs:
+      - targets: ["api:3000"]
+        labels:
+          service: api
+          stage: "1"
+
+  - job_name: chai-realtime
+    static_configs:
+      - targets: ["realtime-gateway:3010"]
+        labels:
+          service: realtime-gateway
+          stage: "1"
+
+  - job_name: chai-workers
+    static_configs:
+      - targets: ["inbox-dispatcher:9100", "outbox-dispatcher:9101"]
+        labels:
+          service: workers
+          stage: "1"
