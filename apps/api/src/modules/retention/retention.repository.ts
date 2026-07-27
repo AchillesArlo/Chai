@@ -35,9 +35,9 @@ export abstract class RetentionRepository {
   abstract deletePolicy(tenantId: string, id: string): Promise<void>;
 
   abstract listJobs(tenantId: string, status?: string): Promise<RetentionJob[]>;
-  abstract getJob(id: string): Promise<RetentionJob | null>;
+  abstract getJob(tenantId: string, id: string): Promise<RetentionJob | null>;
   abstract createJob(job: Omit<RetentionJob, 'id' | 'createdAt' | 'completedAt' | 'recordsProcessed' | 'recordsDeleted' | 'recordsArchived'>): Promise<RetentionJob>;
-  abstract updateJob(id: string, update: Partial<RetentionJob>): Promise<RetentionJob>;
+  abstract updateJob(tenantId: string, id: string, update: Partial<RetentionJob>): Promise<RetentionJob>;
 }
 
 @Injectable()
@@ -81,8 +81,9 @@ export class InMemoryRetentionRepository extends RetentionRepository {
     );
   }
 
-  async getJob(id: string): Promise<RetentionJob | null> {
-    return this.jobs.get(id) || null;
+  async getJob(tenantId: string, id: string): Promise<RetentionJob | null> {
+    const job = this.jobs.get(id);
+    return job && job.tenantId === tenantId ? job : null;
   }
 
   async createJob(job: Omit<RetentionJob, 'id' | 'createdAt' | 'completedAt' | 'recordsProcessed' | 'recordsDeleted' | 'recordsArchived'>): Promise<RetentionJob> {
@@ -91,9 +92,9 @@ export class InMemoryRetentionRepository extends RetentionRepository {
     return created;
   }
 
-  async updateJob(id: string, update: Partial<RetentionJob>): Promise<RetentionJob> {
+  async updateJob(tenantId: string, id: string, update: Partial<RetentionJob>): Promise<RetentionJob> {
     const existing = this.jobs.get(id);
-    if (!existing) throw new Error('Retention job not found');
+    if (!existing || existing.tenantId !== tenantId) throw new Error('Retention job not found');
     const updated = { ...existing, ...update };
     this.jobs.set(id, updated);
     return updated;

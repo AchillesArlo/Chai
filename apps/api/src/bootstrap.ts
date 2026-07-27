@@ -18,12 +18,45 @@ import { registerTokenHook } from './auth/token-hook';
 import { registerCorrelationHook } from './common/correlation';
 import type { ApplicationOptions } from './config';
 
+/**
+ * Which upstream proxies Fastify may trust for `X-Forwarded-For`, from
+ * `TRUSTED_PROXY_CIDRS` (comma-separated IPs / CIDRs, e.g. `10.0.0.0/8,127.0.0.1`).
+ *
+ * SECURITY (auth rate-limit bypass): `request.ip` — the key for the auth rate
+ * limiter (see auth-rate-limit.ts) — is derived from `X-Forwarded-For` only when
+ * the immediate peer is a trusted proxy. `trustProxy: true` trusts XFF from ANY
+ * peer, so an attacker rotates a fabricated XFF to mint a fresh counter per fake
+ * IP and walks straight past the limiter. We therefore trust XFF ONLY from an
+ * explicit allowlist of hops.
+ *
+ * Default when unset/empty: `false` (trust NO proxy → `request.ip` is always the
+ * real socket peer). This fails CLOSED: behind an unconfigured reverse proxy
+ * every request collapses onto the proxy's IP and shares one counter
+ * (over-throttling, safe) rather than each forged XFF getting its own counter
+ * (under-throttling, the vulnerability). Deployments behind nginx/ALB (see the
+ * per-env nginx.conf under infra/) set TRUSTED_PROXY_CIDRS to that proxy's range.
+ */
+export function parseTrustedProxy(
+  raw: string | undefined,
+): boolean | string[] {
+  if (!raw) {
+    return false;
+  }
+  const entries = raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return entries.length > 0 ? entries : false;
+}
+
 export async function createApplication(
   options: ApplicationOptions,
 ): Promise<NestFastifyApplication> {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ trustProxy: true }),
+    new FastifyAdapter({
+      trustProxy: parseTrustedProxy(process.env.TRUSTED_PROXY_CIDRS),
+    }),
     {
       bufferLogs: options.environment !== 'test',
       forceCloseConnections: true,

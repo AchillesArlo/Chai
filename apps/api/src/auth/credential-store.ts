@@ -11,6 +11,7 @@ import {
 } from '@chai/auth/server';
 
 import { API_CLIENT_AGENT_ID, API_CLIENT_OWNER_ID, API_TENANT_ID } from '../database/api-ids';
+import { decryptMfaSecret, encryptMfaSecret } from './mfa-secret-crypto';
 import type { MfaOperations, TotpFactorState } from './mfa-store';
 
 /**
@@ -145,11 +146,23 @@ export class InMemoryCredentialStore implements CredentialStore, MfaOperations {
 
   async getTotpFactor(userId: string): Promise<TotpFactorState | null> {
     const factor = this.totpFactors.get(userId);
-    return factor ? { ...factor } : null;
+    if (!factor) {
+      return null;
+    }
+    // Stored encrypted (like the durable store); hand callers the plaintext.
+    return { ...factor, secret: decryptMfaSecret(factor.secret) };
   }
 
   async startTotpEnrollment(userId: string, secret: string): Promise<void> {
-    this.totpFactors.set(userId, { confirmedAt: null, lastUsedStep: 0, secret });
+    // encryptMfaSecret throws without MFA_SECRET_KEY, so enrolment fails hard
+    // rather than persisting a plaintext secret.
+    this.totpFactors.set(userId, {
+      confirmedAt: null,
+      failedAttemptCount: 0,
+      lastUsedStep: 0,
+      lockedUntil: null,
+      secret: encryptMfaSecret(secret),
+    });
   }
 
   async confirmTotpFactor(userId: string, usedStep: number): Promise<void> {
@@ -174,6 +187,29 @@ export class InMemoryCredentialStore implements CredentialStore, MfaOperations {
 
   async mfaChallengeRequired(userId: string): Promise<boolean> {
     return this.totpFactors.get(userId)?.confirmedAt != null;
+  }
+
+  async recordMfaFailure(userId: string, now = new Date()): Promise<LockoutOutcome> {
+    const factor = this.totpFactors.get(userId);
+    if (!factor) {
+      return { failedAttemptCount: 0, lockedUntil: computeLockedUntil(0, now) };
+    }
+    const failedAttemptCount = factor.failedAttemptCount + 1;
+    const lockedUntil = computeLockedUntil(failedAttemptCount, now);
+    this.totpFactors.set(userId, { ...factor, failedAttemptCount, lockedUntil });
+    return { failedAttemptCount, lockedUntil };
+  }
+
+  async resetMfaFailures(userId: string): Promise<void> {
+    const factor = this.totpFactors.get(userId);
+    if (!factor) {
+      return;
+    }
+    this.totpFactors.set(userId, {
+      ...factor,
+      failedAttemptCount: 0,
+      lockedUntil: null,
+    });
   }
 
   async recordRefreshToken(

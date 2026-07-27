@@ -1,7 +1,7 @@
 
 
 # Project Memory — Chai
-> 67 notes | Score threshold: >40
+> 73 notes | Score threshold: >40
 
 ## Safety — Never Run Destructive Commands
 
@@ -18,20 +18,19 @@
 
 **Stack:** TypeScript · Next.js + React · DB: PostgreSQL, Redis
 
-## Important Warnings
+## 📝 NOTE: 1 uncommitted file(s) in working tree.\n\n## Important Warnings
 
-- **Low cohesion detected in Domain Cluster 213** — Cluster 213 (18 nodes) has a very low cohesion score (0.08). This sugg
-- **Low cohesion detected in Domain Cluster 181** — Cluster 181 (22 nodes) has a very low cohesion score (0.05). This sugg
-- **Low cohesion detected in Domain Cluster 167** — Cluster 167 (13 nodes) has a very low cohesion score (0.08). This sugg
-- **Low cohesion detected in Domain Cluster 158** — Cluster 158 (11 nodes) has a very low cohesion score (0.09). This sugg
-- **Low cohesion detected in Domain Cluster 133** — Cluster 133 (11 nodes) has a very low cohesion score (0.09). This sugg
-- **Low cohesion detected in Domain Cluster 209** — Cluster 209 (18 nodes) has a very low cohesion score (0.08). This sugg
+- **Low cohesion detected in Domain Cluster 210** — Cluster 210 (18 nodes) has a very low cohesion score (0.08). This sugg
+- **Low cohesion detected in Domain Cluster 178** — Cluster 178 (22 nodes) has a very low cohesion score (0.05). This sugg
+- **Low cohesion detected in Domain Cluster 164** — Cluster 164 (13 nodes) has a very low cohesion score (0.08). This sugg
+- **Low cohesion detected in Domain Cluster 155** — Cluster 155 (11 nodes) has a very low cohesion score (0.09). This sugg
+- **Low cohesion detected in Domain Cluster 130** — Cluster 130 (11 nodes) has a very low cohesion score (0.09). This sugg
+- **Low cohesion detected in Domain Cluster 126** — Cluster 126 (18 nodes) has a very low cohesion score (0.06). This sugg
 
 ## Active: `.`
 
 - **convention in .gitignore**
-- **🟢 Edited URUTAN_EKSEKUSI.md (8 changes, 42min)**
-- **🟢 Edited URUTAN_EKSEKUSI.md (7 changes, 159min)**
+- **convention in .gitignore**
 - **convention in .gitignore**
 - **convention in .gitignore**
 

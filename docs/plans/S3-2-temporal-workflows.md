@@ -1,5 +1,12 @@
 # S3-2: Temporal Durable Workflows
 
+> **REMOVED 2026-07-27 — historical record only.** The `@chai/worker-temporal` package
+> described below was deleted as dead code (stub activities, zero callers, no production
+> compose service). The import examples in this doc no longer resolve. Payment/logistics
+> reconciliation runs in the real, deployed `payment-worker` + `logistics-worker`.
+> Rationale and prerequisites for any future Temporal adoption:
+> `docs/plans/2026-07-27-deferred-workers-roadmap.md`.
+
 > Stage 3, Workstream S3-2 — Replaces SKIP LOCKED claim-loop pattern with Temporal durable execution.
 
 ## Overview

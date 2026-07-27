@@ -33,9 +33,9 @@ export abstract class ImpersonationRepository {
   abstract listSessions(tenantId: string, status?: string): Promise<ImpersonationSession[]>;
   abstract getSession(tenantId: string, id: string): Promise<ImpersonationSession | null>;
   abstract createSession(session: Omit<ImpersonationSession, 'id' | 'createdAt' | 'endedAt'>): Promise<ImpersonationSession>;
-  abstract updateSession(id: string, update: Partial<ImpersonationSession>): Promise<ImpersonationSession>;
-  abstract listAuditLogs(sessionId: string): Promise<ImpersonationAuditLog[]>;
-  abstract createAuditLog(log: Omit<ImpersonationAuditLog, 'id' | 'createdAt'>): Promise<ImpersonationAuditLog>;
+  abstract updateSession(tenantId: string, id: string, update: Partial<ImpersonationSession>): Promise<ImpersonationSession>;
+  abstract listAuditLogs(tenantId: string, sessionId: string): Promise<ImpersonationAuditLog[]>;
+  abstract createAuditLog(tenantId: string, log: Omit<ImpersonationAuditLog, 'id' | 'createdAt'>): Promise<ImpersonationAuditLog>;
 }
 
 @Injectable()
@@ -60,19 +60,23 @@ export class InMemoryImpersonationRepository extends ImpersonationRepository {
     return created;
   }
 
-  async updateSession(id: string, update: Partial<ImpersonationSession>): Promise<ImpersonationSession> {
+  async updateSession(tenantId: string, id: string, update: Partial<ImpersonationSession>): Promise<ImpersonationSession> {
     const existing = this.sessions.get(id);
-    if (!existing) throw new Error('Impersonation session not found');
+    if (!existing || existing.tenantId !== tenantId) throw new Error('Impersonation session not found');
     const updated = { ...existing, ...update };
     this.sessions.set(id, updated);
     return updated;
   }
 
-  async listAuditLogs(sessionId: string): Promise<ImpersonationAuditLog[]> {
+  async listAuditLogs(tenantId: string, sessionId: string): Promise<ImpersonationAuditLog[]> {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.tenantId !== tenantId) return [];
     return this.auditLogs.filter(l => l.impersonationSessionId === sessionId);
   }
 
-  async createAuditLog(log: Omit<ImpersonationAuditLog, 'id' | 'createdAt'>): Promise<ImpersonationAuditLog> {
+  async createAuditLog(tenantId: string, log: Omit<ImpersonationAuditLog, 'id' | 'createdAt'>): Promise<ImpersonationAuditLog> {
+    const session = this.sessions.get(log.impersonationSessionId);
+    if (!session || session.tenantId !== tenantId) throw new Error('Impersonation session not found');
     const created = { ...log, id: randomUUID(), createdAt: new Date().toISOString() };
     this.auditLogs.push(created);
     return created;

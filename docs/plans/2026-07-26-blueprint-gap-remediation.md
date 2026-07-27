@@ -263,6 +263,27 @@ Temuan paling menentukan:
 
 ---
 
+## 1e. D4 — hapus paket mati & bereskan operasional, 27 Jul 2026
+
+Cakupan D4: `workers/temporal/**`, `workers/media-worker/**`, `infra/**`, `scripts/**`, `docs/**`, `pnpm-workspace.yaml`, `package.json` root. (Memperbarui catatan di §1b poin 2 yang masih menyebut `temporal` dan `media-worker` sebagai worker-pustaka: keduanya kini dihapus.)
+
+| Pekerjaan | Hasil | Bukti |
+|---|---|---|
+| Hapus `workers/temporal` (paket mati) | **DIHAPUS** | Aktivitas stub (`pollPaymentSessionActivity` → mock `PENDING`, dua aktivitas lain `// TODO`); **nol importir** — grep `@chai/worker-temporal` / `startFollowUpWorkflow` di seluruh `apps/*`, `packages/*`, `services/*`, `workers/*` hanya menemukan paket itu sendiri + docs + compose staging. Tidak ada layanan `temporal` di compose produksi. Rekonsiliasi nyata ada di `payment-worker` + `logistics-worker` (terdeploy). |
+| Hapus `workers/media-worker` (paket mati) | **DIHAPUS** | Hanya `classifyMediaJob` (fungsi murni), dipanggil **hanya** tesnya sendiri; tanpa `main.ts`/`start`/importir. Kapabilitas media butuh object storage yang belum ada. |
+| Hapus runbook operasi temporal | **DIHAPUS** | `docs/runbooks/temporal-operations.md` (dokumen operasi paket mati, berisi contoh `import … from '@chai/worker-temporal'`). |
+| Konsistensi compose staging | **SELESAI** | `temporal` + `temporal-ui` + `temporal-worker` dihapus dari `infra/staging/docker-compose.yml`; render `config` = **0** referensi temporal. |
+| Tabrakan port compose | **DIPERBAIKI** | `nginx` replicas 3→**1** (edge publik port tetap 80/443, tak bisa direplikasi satu node); `redis-sentinel` **hapus publikasi port host** 26379 (layanan internal, tetap replicas 3 untuk quorum). Render `config`: nginx=1, sentinel port publish=0. Staging `nginx` 2→1. |
+| Backup otomatis + kejujuran RPO | **SELESAI** | Layanan `postgres-backup` baru: `pg_dump` terjadwal (default per jam) ke volume `postgres_backups` dengan retensi; jalan sebagai owner agar FORCE RLS tak memotong dump. Klaim "RPO < 5 min" di `go-live-runbook.md` **dikoreksi** → RPO ≈ interval dump; sub-5-menit butuh WAL/PITR (jalan naik didokumentasikan). |
+| Healthcheck worker | **DIDOKUMENTASIKAN** | `pgrep -f` = liveness saja; batasan + jalan naik (endpoint/heartbeat = kode worker, di luar cakupan) dicatat di kedua compose. |
+| Roadmap kapabilitas tertunda | **DIBUAT** | `docs/plans/2026-07-27-deferred-workers-roadmap.md` (media + temporal, gaya community-gateway-roadmap). |
+
+Verifikasi D4 (exit 0 semua): `pnpm install` (lockfile −1110/+9, seluruh pohon `@temporalio/*` + `nanoid` hilang); `pnpm run typecheck` **23/23** task (turun dari 25, −2 paket); `docker compose … config --quiet` produksi **dan** staging. Jumlah task turbo: typecheck 25→23, lint 25→23, `turbo run test` 38→**36** (−2 = task test temporal + media). Root `pnpm exec vitest run tests` **164 passed / 9 skip** (termasuk tes boundary impor — bukti graf paket tetap sehat setelah penghapusan).
+
+**Batasan yang harus diketahui:** `pnpm run lint` dan `pnpm run test` **penuh** merah pada iterasi ini, tetapi **bukan** karena D4 — melainkan agen paralel yang sedang mengedit `apps/api` (refactor state-machine → repository Postgres, MFA) dan sempat menyentuh stack auth/ui. Saat diisolasi, cakupan non-app lint **19/19 hijau**, dan `@chai/ui` (69 tes) + `@chai/auth-client` (21 tes) **lulus**. `@chai/api` gagal karena kode konkuren yang belum selesai, di luar cakupan D4. Tidak ada `eslint-disable`, `any`, atau tes di-skip yang ditambahkan D4; `git status` mengonfirmasi seluruh perubahan D4 berada dalam cakupannya.
+
+---
+
 ## 2. Yang Sudah Selaras
 
 Bagian ini penting agar remediasi tidak merusak yang sudah benar.

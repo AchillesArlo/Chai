@@ -17,6 +17,7 @@ import {
 } from '@chai/database';
 
 import type { MfaOperations, TotpFactorState } from './mfa-store';
+import { decryptMfaSecret, encryptMfaSecret } from './mfa-secret-crypto';
 
 /**
  * Durable, Postgres-backed credential + MFA store.
@@ -191,9 +192,19 @@ export class PostgresCredentialStore implements CredentialStore, MfaOperations {
 
   async getTotpFactor(userId: string): Promise<TotpFactorState | null> {
     const [row] = await this.database<
-      { secret: string; confirmedAt: Date | null; lastUsedStep: string }[]
+      {
+        secret: string;
+        confirmedAt: Date | null;
+        lastUsedStep: string;
+        failedAttemptCount: number;
+        lockedUntil: Date | null;
+      }[]
     >`
-      SELECT secret, confirmed_at AS "confirmedAt", last_used_step AS "lastUsedStep"
+      SELECT secret,
+             confirmed_at AS "confirmedAt",
+             last_used_step AS "lastUsedStep",
+             failed_attempt_count AS "failedAttemptCount",
+             locked_until AS "lockedUntil"
       FROM chai.user_mfa_factor
       WHERE user_id = ${userId} AND kind = 'TOTP'
       LIMIT 1
@@ -203,19 +214,28 @@ export class PostgresCredentialStore implements CredentialStore, MfaOperations {
     }
     return {
       confirmedAt: row.confirmedAt,
+      failedAttemptCount: row.failedAttemptCount,
       lastUsedStep: Number(row.lastUsedStep),
-      secret: row.secret,
+      lockedUntil: row.lockedUntil,
+      // Decrypt on read; startTotpEnrollment wrote it encrypted (0061).
+      secret: decryptMfaSecret(row.secret),
     };
   }
 
   async startTotpEnrollment(userId: string, secret: string): Promise<void> {
+    // encryptMfaSecret throws without MFA_SECRET_KEY, so enrolment fails hard
+    // rather than persisting a plaintext secret. Re-enrolment also clears any
+    // prior MFA lockout for a clean slate.
+    const encrypted = encryptMfaSecret(secret);
     await this.database`
       INSERT INTO chai.user_mfa_factor (id, user_id, kind, secret)
-      VALUES (${uuidv7()}, ${userId}, 'TOTP', ${secret})
+      VALUES (${uuidv7()}, ${userId}, 'TOTP', ${encrypted})
       ON CONFLICT (user_id, kind) DO UPDATE
         SET secret = EXCLUDED.secret,
             confirmed_at = NULL,
             last_used_step = 0,
+            failed_attempt_count = 0,
+            locked_until = NULL,
             updated_at = now()
     `;
   }
@@ -246,6 +266,39 @@ export class PostgresCredentialStore implements CredentialStore, MfaOperations {
       LIMIT 1
     `;
     return rows.length > 0;
+  }
+
+  async recordMfaFailure(userId: string, now = new Date()): Promise<LockoutOutcome> {
+    // Same shape as recordFailedAttempt (login lockout), on the factor's own
+    // counter: N consecutive failures lock verification for the policy window.
+    const lockSeconds = Math.floor(DEFAULT_LOCKOUT_POLICY.lockDurationMs / 1_000);
+    const threshold = DEFAULT_LOCKOUT_POLICY.maxFailedAttempts;
+    const [row] = await this.database<
+      { failedAttemptCount: number; lockedUntil: Date | null }[]
+    >`
+      UPDATE chai.user_mfa_factor
+      SET failed_attempt_count = failed_attempt_count + 1,
+          locked_until = CASE
+            WHEN failed_attempt_count + 1 >= ${threshold}
+              THEN now() + ${`${lockSeconds} seconds`}::interval
+            ELSE locked_until
+          END,
+          updated_at = now()
+      WHERE user_id = ${userId} AND kind = 'TOTP'
+      RETURNING failed_attempt_count AS "failedAttemptCount", locked_until AS "lockedUntil"
+    `;
+    if (!row) {
+      return { failedAttemptCount: 0, lockedUntil: computeLockedUntil(0, now) };
+    }
+    return { failedAttemptCount: row.failedAttemptCount, lockedUntil: row.lockedUntil };
+  }
+
+  async resetMfaFailures(userId: string): Promise<void> {
+    await this.database`
+      UPDATE chai.user_mfa_factor
+      SET failed_attempt_count = 0, locked_until = NULL, updated_at = now()
+      WHERE user_id = ${userId} AND kind = 'TOTP'
+    `;
   }
 }
 

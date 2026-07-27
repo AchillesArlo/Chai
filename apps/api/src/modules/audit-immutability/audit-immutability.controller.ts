@@ -72,8 +72,8 @@ export class AuditImmutabilityController {
   }
 
   @Get('entries/:id')
-  async getEntry(@Param('id') id: string) {
-    return this.repo.getEntry(id);
+  async getEntry(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.repo.getEntry(tenantId, id);
   }
 
   @Get('entries')

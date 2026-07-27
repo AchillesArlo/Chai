@@ -76,9 +76,7 @@ services:
   # This is the ONLY chai service that connects as POSTGRES_USER (owner/superuser)
   # — its job is DDL: schema, roles, and RLS policies. Every RUNTIME service
   # below connects as a NOBYPASSRLS LOGIN role (chai_api / chai_worker, created by
-  # migration 0051) so RLS is enforced on the app/worker path. (The temporal
-  # auto-setup service keeps POSTGRES_USER for its OWN store, which is not a chai
-  # RLS table.)
+  # migration 0051) so RLS is enforced on the app/worker path.
   migrate:
     build:
       context: ../..
@@ -110,6 +108,8 @@ services:
       DATABASE_URL: postgres://chai_api:${CHAI_API_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      MFA_SECRET_KEY: ${MFA_SECRET_KEY:?MFA_SECRET_KEY is required}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       ENABLE_METRICS: "true"
       METRICS_PORT: 9090
     depends_on:
@@ -175,6 +175,17 @@ services:
   # ============================================================================
   # Worker Services
   # ============================================================================
+  #
+  # Worker healthchecks use `pgrep -f <name>`, which matches the container's PID 1
+  # — the `pnpm --filter @chai/worker-<name> start` supervisor, whose argv carries
+  # the unique worker name. This is a LIVENESS probe only: it proves the supervisor
+  # process is up, and because the supervisor forks `node … src/main.ts` and exits
+  # when that runtime dies (stopping the container), it does track the worker being
+  # alive. It CANNOT detect a hung-but-alive worker. A true readiness probe would
+  # require the worker to expose a health signal (HTTP endpoint or heartbeat) —
+  # that is worker source code and out of scope for this infra file, and the
+  # workers expose no HTTP port, so pgrep is the strongest signal available here
+  # without changing them.
 
   channel-worker:
     build:
@@ -251,17 +262,15 @@ services:
       - backend
 
   # --------------------------------------------------------------------------
-  # payment-worker / logistics-worker / media-worker are intentionally NOT
-  # deployed yet. Their packages currently expose only pure, unwired helpers
-  # (pollAndReconcile, shouldMarkStale, classifyMediaJob) with no durable job
-  # source: they do not depend on @chai/database, and the mock connector stores
-  # are per-process/in-memory, so a standalone process would have nothing to
-  # reconcile, sweep, or classify. A `start` loop here would be a container that
-  # only pretends to do work, so no `start` script was invented for them.
-  # They return once a real job source lands: a DB-backed session/shipment
-  # repository query (payment, logistics) or an object-storage/media queue
-  # consumer (media) — mirroring how analytics-worker drives the real
-  # runBurnRateHarvest pass below.
+  # NOTE: the former media-worker was a dead package (a pure classifier,
+  # classifyMediaJob, with no main.ts, no job source, and no importers) and was
+  # removed; the media capability is deferred until object storage exists
+  # (docs/plans/2026-07-27-deferred-workers-roadmap.md).
+  #
+  # payment-worker and logistics-worker are real, deployable services (DB-backed
+  # reconcile loops + `start` scripts) and DO run in infra/production; this
+  # staging compose simply does not wire them in. Add them here the same way as
+  # the production file when staging needs payment/logistics reconciliation.
   # --------------------------------------------------------------------------
 
   analytics-worker:
@@ -374,114 +383,6 @@ services:
     networks:
       - backend
 
-  # media-worker: intentionally not deployed — see the disabled-workers note
-  # above the analytics-worker service for the rationale and upgrade path.
-
-  # ============================================================================
-  # Temporal Services
-  # ============================================================================
-
-  temporal:
-    image: temporalio/auto-setup:1.26
-    environment:
-      DB: postgresql
-      DB_PORT: "5432"
-      POSTGRES_USER: ${POSTGRES_USER:-chai_admin}
-      POSTGRES_PWD: ${POSTGRES_PASSWORD}
-      POSTGRES_SEEDS: postgres
-      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development.yaml
-    ports:
-      - "${TEMPORAL_PORT:-7233}:7233"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "temporal", "workflow", "list", "--address", "localhost:7233"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    restart: unless-stopped
-    networks:
-      - backend
-
-  temporal-ui:
-    image: temporalio/ui:2.34
-    environment:
-      TEMPORAL_ADDRESS: temporal:7233
-      TEMPORAL_CORS_ORIGINS: http://localhost:3000
-    ports:
-      - "${TEMPORAL_UI_PORT:-8080}:8080"
-    depends_on:
-      temporal:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
-      start_period: 20s
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-        reservations:
-          cpus: '0.25'
-          memory: 128M
-    restart: unless-stopped
-    networks:
-      - backend
-      - frontend
-
-  temporal-worker:
-    build:
-      context: ../..
-      dockerfile: infra/Dockerfile
-    command: ["pnpm", "--filter", "@chai/worker-temporal", "start:worker"]
-    environment:
-      NODE_ENV: staging
-      TEMPORAL_ADDRESS: temporal:7233
-      TEMPORAL_NAMESPACE: default
-      DATABASE_URL: postgres://chai_worker:${CHAI_WORKER_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-    depends_on:
-      temporal:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD", "pgrep", "-f", "tsx src/worker.ts"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    deploy:
-      replicas: 2
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    restart: unless-stopped
-    networks:
-      - backend
-
   # ============================================================================
   # Frontend Services
   # ============================================================================
@@ -575,8 +476,12 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    # Single replica by necessity: nginx publishes fixed host ports 80/443 and is
+    # the public edge, so replicas>1 under single-node `docker compose up` would
+    # collide on those host ports (only one could bind them). Scale the edge in
+    # front of Compose, not with same-host replicas.
     deploy:
-      replicas: 2
+      replicas: 1
       resources:
         limits:
           cpus: '0.5'

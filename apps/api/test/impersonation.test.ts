@@ -67,7 +67,7 @@ describe('ImpersonationRepository', () => {
         approvedAt: null,
       });
 
-      const updated = await repo.updateSession(session.id, {
+      const updated = await repo.updateSession(tenantId, session.id, {
         status: 'ended',
         endedAt: new Date().toISOString(),
       });
@@ -94,7 +94,7 @@ describe('ImpersonationRepository', () => {
         approvedAt: null,
       });
 
-      const log = await repo.createAuditLog({
+      const log = await repo.createAuditLog(tenantId, {
         impersonationSessionId: session.id,
         action: 'view_profile',
         resourceType: 'user',
@@ -122,7 +122,7 @@ describe('ImpersonationRepository', () => {
         approvedAt: null,
       });
 
-      await repo.createAuditLog({
+      await repo.createAuditLog(tenantId, {
         impersonationSessionId: session.id,
         action: 'view_profile',
         resourceType: 'user',
@@ -130,7 +130,7 @@ describe('ImpersonationRepository', () => {
         details: {},
       });
 
-      await repo.createAuditLog({
+      await repo.createAuditLog(tenantId, {
         impersonationSessionId: session.id,
         action: 'update_profile',
         resourceType: 'user',
@@ -138,7 +138,7 @@ describe('ImpersonationRepository', () => {
         details: { field: 'name' },
       });
 
-      const logs = await repo.listAuditLogs(session.id);
+      const logs = await repo.listAuditLogs(tenantId, session.id);
       expect(logs).toHaveLength(2);
     });
   });

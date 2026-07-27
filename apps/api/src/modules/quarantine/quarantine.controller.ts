@@ -1,6 +1,6 @@
 import { TenantId } from '../../common/tenant-id.decorator';
 import { RequirePermission } from '../../guards/require-permission.decorator';
-import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, Inject } from '@nestjs/common';
 import {
   IsIn,
   IsISO8601,
@@ -8,7 +8,7 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
-import { QuarantineRepository, InMemoryQuarantineRepository } from './quarantine.repository';
+import { QuarantineRepository } from './quarantine.repository';
 
 const SOURCE_TYPE = ['webhook', 'provider_event', 'unknown_payload'] as const;
 const ENTRY_STATUS = ['pending', 'reviewed', 'released', 'rejected', 'expired'] as const;
@@ -112,11 +112,9 @@ class LogAccessDto {
 
 @Controller('api/owner/v1/quarantine')
 export class QuarantineController {
-  private repo: QuarantineRepository;
-
-  constructor() {
-    this.repo = new InMemoryQuarantineRepository();
-  }
+  constructor(
+    @Inject('QuarantineRepository') private readonly repo: QuarantineRepository,
+  ) {}
 
   @Get('entries')
   @RequirePermission('platform.reliability.read')

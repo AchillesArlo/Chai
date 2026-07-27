@@ -72,14 +72,45 @@ export KILL_SWITCH_CHANNEL=true
 
 ## 3. Disaster Recovery & Backup Restore Procedure (S10)
 
-### Database Backup Execution (RPO Target < 5 min)
+### Backups — what actually runs
+
+Production runs an **automated** logical backup: the `postgres-backup` service in
+`infra/production/docker-compose.yml` runs `pg_dump` every `BACKUP_INTERVAL_SECONDS`
+(default 3600s = hourly), writes gzipped dumps to the `postgres_backups` volume, and
+prunes to the newest `BACKUP_RETENTION_COUNT` (default 48). It connects as
+`POSTGRES_USER` (the schema owner) on purpose: tenant tables are FORCE RLS, so a
+NOBYPASSRLS role would dump a *silently incomplete* database.
+
 ```bash
-pg_dump $DATABASE_URL > backup-production-$(date +%F-%H%M).sql
+# Confirm backups are being produced
+docker compose -f infra/production/docker-compose.yml logs -f postgres-backup
+docker compose -f infra/production/docker-compose.yml exec postgres-backup ls -lt /backups | head
+```
+
+### RPO — the honest number
+
+**RPO ≈ the backup interval (hourly by default), NOT sub-5-minute.** A logical `pg_dump`
+is a point-in-time snapshot; worst-case data loss is everything written since the last
+successful dump. There is **no** mechanism in this deployment that achieves a sub-5-minute
+RPO today. (The earlier "RPO < 5 min" target was not supported by manual `pg_dump` and has
+been corrected here.)
+
+To actually reach a minutes-level RPO you need **continuous WAL archiving / streaming
+replication (PITR)** — archive `pg_wal` segments (or a hot standby) so recovery can replay
+to any point. That is the documented **upgrade path** and is not yet implemented; until it
+is, do not advertise an RPO smaller than the configured backup interval. Tighten
+`BACKUP_INTERVAL_SECONDS` for a smaller RPO at higher I/O cost as an interim measure.
+
+### On-demand backup (e.g. immediately before a migration)
+
+```bash
+docker compose -f infra/production/docker-compose.yml exec -T postgres \
+  pg_dump -U chai_admin chai | gzip > backup-production-$(date +%F-%H%M).sql.gz
 ```
 
 ### Disaster Recovery Restore (RTO Target < 15 min)
 ```bash
-psql $NEW_DATABASE_URL < backup-production-2026-07-24-1200.sql
+gunzip -c chai-chai-YYYYMMDD-HHMMSS.sql.gz | psql "$NEW_DATABASE_URL"
 pnpm pilot:backup-drill
 ```
 

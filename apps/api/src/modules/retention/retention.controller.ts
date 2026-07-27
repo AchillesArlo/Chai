@@ -1,6 +1,6 @@
 import { TenantId } from '../../common/tenant-id.decorator';
 import { RequirePermission } from '../../guards/require-permission.decorator';
-import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, Inject } from '@nestjs/common';
 import {
   IsArray,
   IsBoolean,
@@ -11,7 +11,7 @@ import {
   IsString,
   Min,
 } from 'class-validator';
-import { RetentionRepository, InMemoryRetentionRepository } from './retention.repository';
+import { RetentionRepository } from './retention.repository';
 
 const DELETION_METHOD = ['soft_delete', 'hard_delete', 'archive'] as const;
 const RETENTION_JOB_STATUS = ['running', 'completed', 'failed'] as const;
@@ -107,11 +107,9 @@ class UpdateJobDto {
 
 @Controller('api/owner/v1/retention')
 export class RetentionController {
-  private repo: RetentionRepository;
-
-  constructor() {
-    this.repo = new InMemoryRetentionRepository();
-  }
+  constructor(
+    @Inject('RetentionRepository') private readonly repo: RetentionRepository,
+  ) {}
 
   @Get('policies')
   @RequirePermission('platform.reliability.read')
@@ -151,8 +149,8 @@ export class RetentionController {
 
   @Get('jobs/:id')
   @RequirePermission('platform.reliability.read')
-  async getJob(@Param('id') id: string) {
-    return this.repo.getJob(id);
+  async getJob(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.repo.getJob(tenantId, id);
   }
 
   @Post('jobs')
@@ -163,7 +161,11 @@ export class RetentionController {
 
   @Put('jobs/:id')
   @RequirePermission('platform.reliability.manage')
-  async updateJob(@Param('id') id: string, @Body() body: UpdateJobDto) {
-    return this.repo.updateJob(id, body);
+  async updateJob(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: UpdateJobDto,
+  ) {
+    return this.repo.updateJob(tenantId, id, body);
   }
 }

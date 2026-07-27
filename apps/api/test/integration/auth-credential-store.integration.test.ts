@@ -21,6 +21,9 @@ import { seedApiRuntime } from '../../src/database/seed-runtime';
  * password is stored as a one-way scrypt hash, never as plaintext.
  */
 
+// D3: TOTP secrets are encrypted at rest; the store fails hard without a key.
+process.env.MFA_SECRET_KEY = 'b'.repeat(64);
+
 const EMAIL = 'pg-login@chai.local';
 const PASSWORD = 'Sup3rSecret!Pw9';
 
@@ -140,6 +143,17 @@ describe('B1 PostgresCredentialStore (real Postgres)', () => {
     expect(pending?.lastUsedStep).toBe(0);
     expect(await store.mfaChallengeRequired(API_CLIENT_OWNER_ID)).toBe(false);
 
+    // At rest, the raw column is AES-256-GCM ciphertext (envelope v1.…), never
+    // the plaintext base32 secret — getTotpFactor above decrypted it.
+    const rawSecret = await admin<{ secret: string }[]>`
+      SELECT secret FROM chai.user_mfa_factor
+      WHERE user_id = ${API_CLIENT_OWNER_ID} AND kind = 'TOTP'
+    `;
+    expect(rawSecret[0]?.secret).toBeTruthy();
+    expect(rawSecret[0]?.secret).not.toBe(secret);
+    expect(rawSecret[0]?.secret).not.toContain(secret);
+    expect(rawSecret[0]?.secret.startsWith('v1.')).toBe(true);
+
     await store.confirmTotpFactor(API_CLIENT_OWNER_ID, 100);
     const confirmed = await store.getTotpFactor(API_CLIENT_OWNER_ID);
     expect(confirmed?.confirmedAt).not.toBeNull();
@@ -153,5 +167,31 @@ describe('B1 PostgresCredentialStore (real Postgres)', () => {
     // replay window.
     await store.markTotpStepUsed(API_CLIENT_OWNER_ID, 50);
     expect((await store.getTotpFactor(API_CLIENT_OWNER_ID))?.lastUsedStep).toBe(101);
+  });
+
+  it('persists and clears the MFA verification lockout through Postgres', async () => {
+    // Fresh factor: startTotpEnrollment resets the lockout columns too.
+    const secret = generateTotpSecret();
+    await store.startTotpEnrollment(API_CLIENT_OWNER_ID, secret);
+    await store.confirmTotpFactor(API_CLIENT_OWNER_ID, 200);
+
+    let outcome = { failedAttemptCount: 0, lockedUntil: null as Date | null };
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      outcome = await store.recordMfaFailure(API_CLIENT_OWNER_ID);
+    }
+    expect(outcome.failedAttemptCount).toBe(5);
+    if (!outcome.lockedUntil) {
+      throw new Error('expected MFA verification to lock after 5 failures');
+    }
+    expect(outcome.lockedUntil.getTime()).toBeGreaterThan(Date.now());
+
+    const locked = await store.getTotpFactor(API_CLIENT_OWNER_ID);
+    expect(locked?.failedAttemptCount).toBe(5);
+    expect(locked?.lockedUntil).not.toBeNull();
+
+    await store.resetMfaFailures(API_CLIENT_OWNER_ID);
+    const cleared = await store.getTotpFactor(API_CLIENT_OWNER_ID);
+    expect(cleared?.failedAttemptCount).toBe(0);
+    expect(cleared?.lockedUntil).toBeNull();
   });
 });

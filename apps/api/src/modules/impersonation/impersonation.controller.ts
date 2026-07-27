@@ -1,6 +1,6 @@
 import { TenantId } from '../../common/tenant-id.decorator';
 import { RequirePermission } from '../../guards/require-permission.decorator';
-import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, Inject } from '@nestjs/common';
 import {
   IsBoolean,
   IsIn,
@@ -11,7 +11,7 @@ import {
   IsString,
   Min,
 } from 'class-validator';
-import { ImpersonationRepository, InMemoryImpersonationRepository } from './impersonation.repository';
+import { ImpersonationRepository } from './impersonation.repository';
 
 const IMPERSONATION_STATUS = ['active', 'ended', 'expired', 'revoked'] as const;
 
@@ -95,11 +95,9 @@ class CreateAuditLogDto {
 
 @Controller('api/owner/v1/impersonation')
 export class ImpersonationController {
-  private repo: ImpersonationRepository;
-
-  constructor() {
-    this.repo = new InMemoryImpersonationRepository();
-  }
+  constructor(
+    @Inject('ImpersonationRepository') private readonly repo: ImpersonationRepository,
+  ) {}
 
   @Get('sessions')
   @RequirePermission('platform.audit.read')
@@ -121,19 +119,27 @@ export class ImpersonationController {
 
   @Put('sessions/:id')
   @RequirePermission('platform.access.manage')
-  async updateSession(@Param('id') id: string, @Body() body: UpdateSessionDto) {
-    return this.repo.updateSession(id, body);
+  async updateSession(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: UpdateSessionDto,
+  ) {
+    return this.repo.updateSession(tenantId, id, body);
   }
 
   @Get('sessions/:id/audit-logs')
   @RequirePermission('platform.audit.read')
-  async listAuditLogs(@Param('id') id: string) {
-    return this.repo.listAuditLogs(id);
+  async listAuditLogs(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.repo.listAuditLogs(tenantId, id);
   }
 
   @Post('sessions/:id/audit-logs')
   @RequirePermission('platform.access.manage')
-  async createAuditLog(@Param('id') id: string, @Body() body: CreateAuditLogDto) {
-    return this.repo.createAuditLog({ ...body, impersonationSessionId: id });
+  async createAuditLog(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: CreateAuditLogDto,
+  ) {
+    return this.repo.createAuditLog(tenantId, { ...body, impersonationSessionId: id });
   }
 }

@@ -80,11 +80,17 @@ services:
     networks:
       - backend
 
+  # 3 sentinels for a real failover quorum (quorum=2). They are NOT published to
+  # the host: under single-node `docker compose up`, replicas:3 with a fixed host
+  # port (26379:26379) would make all three replicas try to bind the same host
+  # port and only one could start. Sentinel is an INTERNAL service — the API and
+  # workers reach it over the `backend` network by service name on 26379, no host
+  # publish required — so the fix is to drop the host port, not to cut replicas.
+  # (Client-side discovery still targets the sentinel set over the backend
+  # network; container-port 26379 is open to the network without a host mapping.)
   redis-sentinel:
     image: redis:7.4-alpine
     command: redis-sentinel /etc/redis/sentinel.conf
-    ports:
-      - "${REDIS_SENTINEL_PORT:-26379}:26379"
     volumes:
       - ./sentinel.conf:/etc/redis/sentinel.conf:ro
     depends_on:
@@ -101,6 +107,79 @@ services:
         limits:
           cpus: '0.5'
           memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    restart: always
+    networks:
+      - backend
+
+  # ============================================================================
+  # Automated Database Backups
+  # ============================================================================
+  #
+  # Scheduled logical backups (pg_dump) to a retained volume — a REAL unattended
+  # backup, not the one-off pg_dump in the deploy script / runbook. Prunes to the
+  # newest BACKUP_RETENTION_COUNT dumps.
+  #
+  # RPO REALITY (do not over-claim): a logical dump is a point-in-time snapshot
+  # taken every BACKUP_INTERVAL_SECONDS, so worst-case data loss (RPO) equals that
+  # interval — ~1h with the shipped hourly default. This does NOT meet a
+  # sub-5-minute RPO; that needs continuous WAL archiving / streaming replication
+  # (PITR). The go-live runbook states this honestly and names PITR as the upgrade
+  # path. Tighten the interval for a smaller RPO at higher I/O cost, or add WAL
+  # archiving for minutes-level RPO.
+  #
+  # Connects as POSTGRES_USER (the schema owner/superuser) ON PURPOSE: every
+  # tenant table is FORCE RLS, so a NOBYPASSRLS runtime role (chai_api/chai_worker)
+  # would dump a SILENTLY INCOMPLETE database — RLS would filter out rows it may
+  # not see. Only the owner/superuser captures every tenant's rows, which is
+  # exactly what a backup must do. Backups are an admin task, so reusing the
+  # migrate-tier role keeps the runtime roles NOBYPASSRLS (tenant-isolation
+  # invariant intact).
+  postgres-backup:
+    image: postgres:17.6-alpine
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-chai_admin}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-chai}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-3600}
+      BACKUP_RETENTION_COUNT: ${BACKUP_RETENTION_COUNT:-48}
+    volumes:
+      - postgres_backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        echo "[backup] loop start: interval=$${BACKUP_INTERVAL_SECONDS}s retention=$${BACKUP_RETENTION_COUNT} dumps"
+        while true; do
+          ts=$$(date +%Y%m%d-%H%M%S)
+          raw="/backups/chai-$${PGDATABASE}-$${ts}.sql.partial"
+          out="/backups/chai-$${PGDATABASE}-$${ts}.sql.gz"
+          if pg_dump > "$${raw}"; then
+            gzip -c "$${raw}" > "$${out}"
+            rm -f "$${raw}"
+            echo "[backup] wrote $${out}"
+          else
+            echo "[backup] pg_dump FAILED (ts=$${ts})" >&2
+            rm -f "$${raw}"
+          fi
+          count=$$(ls -1 /backups/chai-*.sql.gz 2>/dev/null | wc -l)
+          if [ "$${count}" -gt "$${BACKUP_RETENTION_COUNT}" ]; then
+            ls -1t /backups/chai-*.sql.gz | tail -n +$$((BACKUP_RETENTION_COUNT + 1)) | while IFS= read -r f; do rm -f "$${f}"; done
+          fi
+          sleep "$${BACKUP_INTERVAL_SECONDS}"
+        done
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
         reservations:
           cpus: '0.25'
           memory: 128M
@@ -159,6 +238,8 @@ services:
       REDIS_SENTINELS: redis-sentinel-0:26379,redis-sentinel-1:26379,redis-sentinel-2:26379
       REDIS_SENTINEL_NAME: chai-master
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      MFA_SECRET_KEY: ${MFA_SECRET_KEY:?MFA_SECRET_KEY is required}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
       ENABLE_METRICS: "true"
       METRICS_PORT: 9090
       ENABLE_TRACING: "true"
@@ -323,17 +404,11 @@ services:
       - monitoring
 
   # --------------------------------------------------------------------------
-  # payment-worker / logistics-worker / media-worker are intentionally NOT
-  # deployed yet. Their packages currently expose only pure, unwired helpers
-  # (pollAndReconcile, shouldMarkStale, classifyMediaJob) with no durable job
-  # source: they do not depend on @chai/database, and the mock connector stores
-  # are per-process/in-memory, so a standalone process would have nothing to
-  # reconcile, sweep, or classify. A `start` loop here would be a container that
-  # only pretends to do work, so no `start` script was invented for them.
-  # They return once a real job source lands: a DB-backed session/shipment
-  # repository query (payment, logistics) or an object-storage/media queue
-  # consumer (media) — mirroring how analytics-worker drives the real
-  # runBurnRateHarvest pass below.
+  # NOTE: every worker package now ships as a deployed service (below). The former
+  # media-worker was a dead package — a pure classifier (classifyMediaJob) with no
+  # main.ts, no job source, and no importers — and was removed. The media
+  # capability is deferred until object storage exists; see
+  # docs/plans/2026-07-27-deferred-workers-roadmap.md.
   # --------------------------------------------------------------------------
 
   analytics-worker:
@@ -539,9 +614,6 @@ services:
       - backend
       - monitoring
 
-  # media-worker: intentionally not deployed — see the disabled-workers note
-  # above the analytics-worker service for the rationale and upgrade path.
-
   # ============================================================================
   # Frontend Services
   # ============================================================================
@@ -638,8 +710,16 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    # Single replica by necessity: nginx is the public edge and MUST publish the
+    # fixed host ports 80/443. Under single-node `docker compose up`, replicas:3
+    # would make all three containers try to bind the same host ports 80/443 and
+    # only one could start (the others crash-loop on "address already in use").
+    # Unlike sentinel, nginx CANNOT drop its host ports — it is the ingress — so
+    # the correct fix here is one replica, not port removal. Horizontal scaling of
+    # the edge belongs in front of Compose (a real LB / multiple nodes / Swarm),
+    # not in three same-host containers fighting over one port pair.
     deploy:
-      replicas: 3
+      replicas: 1
       resources:
         limits:
           cpus: '1'
@@ -834,6 +914,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  postgres_backups:
     driver: local
   redis_master_data:
     driver: local

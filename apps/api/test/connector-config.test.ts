@@ -94,7 +94,7 @@ describe('ConnectorConfigRepository', () => {
         updatedBy: null,
       });
 
-      const secret = await repo.createSecret({
+      const secret = await repo.createSecret(tenantId, {
         connectorConfigId: config.id,
         secretKey: 'api_key',
         secretValueEncrypted: Buffer.from('encrypted-value'),
@@ -123,7 +123,7 @@ describe('ConnectorConfigRepository', () => {
         updatedBy: null,
       });
 
-      await repo.createSecret({
+      await repo.createSecret(tenantId, {
         connectorConfigId: config.id,
         secretKey: 'bot_token',
         secretValueEncrypted: Buffer.from('encrypted'),
@@ -132,7 +132,7 @@ describe('ConnectorConfigRepository', () => {
         rotatedBy: null,
       });
 
-      const secrets = await repo.listSecrets(config.id);
+      const secrets = await repo.listSecrets(tenantId, config.id);
       expect(secrets).toHaveLength(1);
     });
   });

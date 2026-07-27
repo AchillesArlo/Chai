@@ -38,7 +38,7 @@ export interface AuditIntegrityCheck {
 
 export abstract class AuditImmutabilityRepository {
   abstract createEntry(entry: Omit<AuditLogEntry, 'id' | 'createdAt' | 'hash' | 'previousHash'>): Promise<AuditLogEntry>;
-  abstract getEntry(id: string): Promise<AuditLogEntry | null>;
+  abstract getEntry(tenantId: string, id: string): Promise<AuditLogEntry | null>;
   abstract listEntries(tenantId: string, filters?: { resourceType?: string; resourceId?: string; eventType?: string }): Promise<AuditLogEntry[]>;
   abstract verifyChain(tenantId: string, checkedBy: string): Promise<AuditIntegrityCheck>;
 }
@@ -84,8 +84,9 @@ export class InMemoryAuditImmutabilityRepository extends AuditImmutabilityReposi
     return newEntry;
   }
 
-  async getEntry(id: string): Promise<AuditLogEntry | null> {
-    return this.entries.find(e => e.id === id) || null;
+  async getEntry(tenantId: string, id: string): Promise<AuditLogEntry | null> {
+    const entry = this.entries.find(e => e.id === id);
+    return entry && entry.tenantId === tenantId ? entry : null;
   }
 
   async listEntries(tenantId: string, filters?: { resourceType?: string; resourceId?: string; eventType?: string }): Promise<AuditLogEntry[]> {

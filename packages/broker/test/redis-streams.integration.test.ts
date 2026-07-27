@@ -6,9 +6,11 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   createBrokerClient,
+  isSecureRedisUrl,
   outboxStreamKey,
   RedisStreamsConsumer,
   RedisStreamsOutboxPublisher,
+  resolveBrokerRedisOptions,
   type BrokerClient,
   type OutboxStreamMessage,
 } from '../src';
@@ -233,5 +235,38 @@ describe('redis streams broker', () => {
 
     expect(handled).toBe(1);
     expect(seen[0]?.eventId).toBe(claim.id);
+  });
+
+  it('caps stream length with an approximate MAXLEN so PII does not accumulate', async () => {
+    const cap = 100;
+    const capped = new RedisStreamsOutboxPublisher(client, { maxLen: cap });
+    const streamKey = outboxStreamKey('message.delivered');
+    const total = 500;
+    for (let index = 0; index < total; index += 1) {
+      await capped.publish(makeClaim({ eventType: 'message.delivered' }));
+    }
+    const length = await client.xlen(streamKey);
+    // Approximate trimming never drops below the cap but keeps the stream far
+    // under the total written — so old customer-message payloads age out.
+    expect(length).toBeLessThan(total);
+    expect(length).toBeGreaterThanOrEqual(cap);
+
+    // Contrast: with trimming disabled every entry is retained.
+    const unbounded = new RedisStreamsOutboxPublisher(client, { maxLen: 0 });
+    for (let index = 0; index < 10; index += 1) {
+      await unbounded.publish(makeClaim({ eventType: 'message.unbounded' }));
+    }
+    expect(await client.xlen(outboxStreamKey('message.unbounded'))).toBe(10);
+  });
+
+  it('enables TLS transport for rediss:// URLs only', () => {
+    expect(isSecureRedisUrl('rediss://cache.example.com:6380')).toBe(true);
+    expect(isSecureRedisUrl('redis://localhost:6379')).toBe(false);
+    expect(
+      resolveBrokerRedisOptions('rediss://cache.example.com:6380').tls,
+    ).toBeDefined();
+    expect(
+      resolveBrokerRedisOptions('redis://localhost:6379').tls,
+    ).toBeUndefined();
   });
 });

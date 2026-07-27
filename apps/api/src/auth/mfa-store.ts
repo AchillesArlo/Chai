@@ -8,6 +8,8 @@
  * on optional methods.
  */
 
+import type { LockoutOutcome } from '@chai/auth/server';
+
 export interface TotpFactorState {
   /** base32 shared secret. Never logged. */
   secret: string;
@@ -15,6 +17,10 @@ export interface TotpFactorState {
   confirmedAt: Date | null;
   /** Highest step already consumed; a code at or below this is a replay. */
   lastUsedStep: number;
+  /** Consecutive failed verification attempts for the online-brute-force lock. */
+  failedAttemptCount: number;
+  /** When set and in the future, verification is temporarily locked out. */
+  lockedUntil: Date | null;
 }
 
 export interface MfaOperations {
@@ -28,4 +34,14 @@ export interface MfaOperations {
   markTotpStepUsed(userId: string, step: number): Promise<void>;
   /** True when the user has a confirmed factor and must present a code at login. */
   mfaChallengeRequired(userId: string): Promise<boolean>;
+  /**
+   * Records one failed TOTP verification and returns the resulting lock state.
+   * Mirrors the login lockout (`recordFailedAttempt` + `computeLockedUntil` +
+   * DEFAULT_LOCKOUT_POLICY) so MFA step-up cannot be brute-forced online by a
+   * holder of a password-only session. Kept on its own counter (not the login
+   * counter) so the two lockouts do not interfere.
+   */
+  recordMfaFailure(userId: string, now?: Date): Promise<LockoutOutcome>;
+  /** Clears the MFA failure counter after a successful verification. */
+  resetMfaFailures(userId: string): Promise<void>;
 }

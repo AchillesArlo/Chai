@@ -1,5 +1,11 @@
 # S3-2 Implementation Summary: Temporal Durable Workflows
 
+> **REMOVED 2026-07-27 — historical record only.** The `workers/temporal/` package and its
+> `@chai/worker-temporal` imports below were deleted as dead code (stub activities, zero
+> callers, no production compose service). Real payment/logistics reconciliation runs in the
+> deployed `payment-worker` + `logistics-worker`. See
+> `docs/plans/2026-07-27-deferred-workers-roadmap.md`.
+
 ## Overview
 Successfully implemented Temporal.io infrastructure to replace SKIP LOCKED claim-loop pattern with durable execution for three critical business processes.
 

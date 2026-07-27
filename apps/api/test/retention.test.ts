@@ -78,7 +78,7 @@ describe('RetentionRepository', () => {
         errorMessage: null,
       });
 
-      const updated = await repo.updateJob(job.id, {
+      const updated = await repo.updateJob(tenantId, job.id, {
         status: 'completed',
         completedAt: new Date().toISOString(),
         recordsProcessed: 100,

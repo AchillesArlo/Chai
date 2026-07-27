@@ -38,7 +38,6 @@ import { MarketplaceModule } from './modules/marketplace/marketplace.module';
 import { MultiRegionModule } from './modules/multi-region/multi-region.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { ObservabilityModule } from './modules/observability/observability.module';
-import { OutboxModule } from './modules/outbox/outbox.module';
 import { PartnerEcosystemModule } from './modules/partner-ecosystem/partner-ecosystem.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { QuarantineModule } from './modules/quarantine/quarantine.module';
@@ -48,14 +47,10 @@ import { TemplateModule } from './modules/template/template.module';
 import { TicketModule } from './modules/ticket/ticket.module';
 import { WhitelabelModule } from './modules/whitelabel/whitelabel.module';
 import { WidgetModule } from './modules/widget/widget.module';
-import { CommandEventModule } from './modules/command-event/command-event.module';
 import { ConnectorConfigModule } from './modules/connector-config/connector-config.module';
 import { DlqModule } from './modules/dlq/dlq.module';
 import { ImpersonationModule } from './modules/impersonation/impersonation.module';
 import { AuditImmutabilityModule } from './modules/audit-immutability/audit-immutability.module';
-import { JobQueueModule } from './modules/job-queue/job-queue.module';
-import { PaymentStateMachineModule } from './modules/payment-state-machine/payment-state-machine.module';
-import { ShipmentStateMachineModule } from './modules/shipment-state-machine/shipment-state-machine.module';
 
 @Module({
   controllers: [HealthController],
@@ -87,7 +82,6 @@ import { ShipmentStateMachineModule } from './modules/shipment-state-machine/shi
     MultiRegionModule,
     NotificationModule,
     ObservabilityModule,
-    OutboxModule,
     PartnerEcosystemModule,
     PaymentsModule,
     QuarantineModule,
@@ -97,13 +91,9 @@ import { ShipmentStateMachineModule } from './modules/shipment-state-machine/shi
     TicketModule,
     WhitelabelModule,
     WidgetModule,
-    CommandEventModule,
     ConnectorConfigModule,
     ImpersonationModule,
     AuditImmutabilityModule,
-    JobQueueModule,
-    PaymentStateMachineModule,
-    ShipmentStateMachineModule,
     DlqModule,
   ],
   providers: [

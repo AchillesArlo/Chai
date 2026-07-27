@@ -39,7 +39,7 @@ This document outlines the production-ready deployment configurations for the Ch
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Nginx (2 replicas)                    │
+│                    Nginx (1 replica)                     │
 │              Load Balancer + Reverse Proxy               │
 └────────────────┬────────────────────────────────────────┘
                  │
@@ -74,13 +74,13 @@ This document outlines the production-ready deployment configurations for the Ch
 - Frontend: 2 replicas each (owner-console, client-portal)
 - PostgreSQL: 1 instance
 - Redis: 1 instance
-- Nginx: 2 replicas
+- Nginx: 1 replica (public edge — fixed host ports 80/443)
 
 ### Production Environment
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Nginx (3 replicas)                    │
+│                    Nginx (1 replica)                     │
 │              Load Balancer + TLS Termination             │
 └────────────────┬────────────────────────────────────────┘
                  │
@@ -125,7 +125,7 @@ This document outlines the production-ready deployment configurations for the Ch
 - Frontend: 3 replicas each
 - PostgreSQL: 1 instance (tuned for production)
 - Redis: 1 master + 3 sentinels (HA)
-- Nginx: 3 replicas
+- Nginx: 1 replica (public edge — publishes fixed host ports 80/443, so it cannot be replicated on a single Compose node)
 - Prometheus: 1 instance
 - Grafana: 1 instance
 - OpenTelemetry Collector: 1 instance

@@ -158,7 +158,13 @@ describe('every API route maps to a permission', () => {
         .join('/');
       flattened.push(...collectRoutes(relativePath, await readFile(file, 'utf8')));
     }
-    expect(flattened.length).toBeGreaterThan(300);
+    // Sanity floor: the walker must find the bulk of the API surface, guarding
+    // against a file-walk bug that silently returns nothing. Recalibrated from
+    // 300 to 250 after D2 removed the redundant in-memory facade modules
+    // (outbox, command-event, payment-state-machine, shipment-state-machine,
+    // job-queue = 57 routes). The real guard below — every route maps to a
+    // permission — is unchanged.
+    expect(flattened.length).toBeGreaterThan(250);
 
     const offenders = flattened
       .filter((route) => !route.covered)

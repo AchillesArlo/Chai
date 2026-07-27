@@ -1,5 +1,5 @@
 import { TenantId } from '../../common/tenant-id.decorator';
-import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, Inject } from '@nestjs/common';
 import {
   IsArray,
   IsBoolean,
@@ -10,7 +10,7 @@ import {
   IsString,
 } from 'class-validator';
 import { RequirePermission } from '../../guards/require-permission.decorator';
-import { WidgetRepository, InMemoryWidgetRepository } from './widget.repository';
+import { WidgetRepository } from './widget.repository';
 
 const WIDGET_TYPE = ['chat', 'contact_form', 'faq', 'hybrid'] as const;
 const WIDGET_POSITION = ['bottom-right', 'bottom-left', 'top-right', 'top-left'] as const;
@@ -190,11 +190,9 @@ class UpdateWidgetSessionDto {
 
 @Controller('api/client/v1/widgets')
 export class WidgetController {
-  private repo: WidgetRepository;
-
-  constructor() {
-    this.repo = new InMemoryWidgetRepository();
-  }
+  constructor(
+    @Inject('WidgetRepository') private readonly repo: WidgetRepository,
+  ) {}
 
   @Get()
   @RequirePermission('channel.read')

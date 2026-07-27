@@ -111,16 +111,27 @@ export class OwnerMfaController {
     if (!factor || !factor.confirmedAt) {
       throw invalidCode();
     }
+    // Online brute-force lock (parity with the 5-failure login lockout): once
+    // locked, reject BEFORE running verification so a holder of a password-only
+    // session cannot keep guessing TOTP codes. Opaque like every other branch.
+    if (factor.lockedUntil && factor.lockedUntil.getTime() > Date.now()) {
+      throw invalidCode();
+    }
     const result = verifyTotpCode(factor.secret, body.code);
     if (!result.valid || result.step === null) {
+      // A wrong code is a guess: count it toward the lockout threshold.
+      await this.credentialStore.recordMfaFailure(principal.id);
       throw invalidCode();
     }
     // Reject a code whose step was already consumed (replay), then advance the
-    // watermark so this same code cannot be presented again.
+    // watermark so this same code cannot be presented again. A replay is not a
+    // fresh guess, so it does not advance the failure counter.
     if (isTotpStepReplay(result.step, factor.lastUsedStep)) {
       throw invalidCode();
     }
     await this.credentialStore.markTotpStepUsed(principal.id, result.step);
+    // Successful step-up clears the failure counter.
+    await this.credentialStore.resetMfaFailures(principal.id);
 
     // mfaState becomes ENROLLED only here, off a verified DB factor — never from
     // client input. This mints a fresh session that clears the owner MFA gate.

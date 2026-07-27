@@ -30,6 +30,32 @@ const REPLAY_LIMIT = 100;
 const DEFAULT_POLL_INTERVAL_MS = 500;
 const DEFAULT_STREAM_TIMEOUT_MS = 30 * 60 * 1000;
 
+/**
+ * Which upstream proxies Fastify may trust for `X-Forwarded-For`, from
+ * `TRUSTED_PROXY_CIDRS` (comma-separated IPs/CIDRs, e.g. `10.0.0.0/8,127.0.0.1`).
+ *
+ * Default when unset/empty: `false` (trust NO proxy, so `request.ip` is always
+ * the real socket peer) — fails CLOSED. This gateway does not currently read
+ * `request.ip` anywhere, so there is no rate-limit or auth decision this can
+ * bend today; it exists so the option stays consistent with apps/api's
+ * `parseTrustedProxy` (apps/api/src/bootstrap.ts) instead of the blanket
+ * `trustProxy: true` that trusts XFF from any peer.
+ *
+ * ponytail: duplicated locally rather than imported from apps/api — modules
+ * across separate apps are not shared via cross-app relative/package imports in
+ * this repo, so each app keeps its own copy.
+ */
+export function parseTrustedProxy(raw: string | undefined): boolean | string[] {
+  if (!raw) {
+    return false;
+  }
+  const entries = raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return entries.length > 0 ? entries : false;
+}
+
 export function createRealtimeGateway(
   options: RealtimeGatewayOptions = {},
 ): FastifyInstance {
@@ -43,7 +69,10 @@ export function createRealtimeGateway(
     0,
     Math.trunc(options.streamTimeoutMs ?? DEFAULT_STREAM_TIMEOUT_MS),
   );
-  const fastify = Fastify({ logger: false, trustProxy: true });
+  const fastify = Fastify({
+    logger: false,
+    trustProxy: parseTrustedProxy(process.env.TRUSTED_PROXY_CIDRS),
+  });
 
   fastify.get('/health', async () => ({ status: 'ok' }));
 

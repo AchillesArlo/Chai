@@ -16,6 +16,33 @@ export interface BrokerClientOptions {
   maxRetriesPerRequest?: number;
 }
 
+/** True for a `rediss://` URL, i.e. one that requires TLS transport. */
+export function isSecureRedisUrl(redisUrl: string): boolean {
+  return /^rediss:\/\//iu.test(redisUrl.trim());
+}
+
+/**
+ * Builds the ioredis options for a URL. Pure (no socket), so the TLS decision is
+ * unit-testable. A `rediss://` URL turns TLS on explicitly: customer message text
+ * crosses this wire, so an operator who points REDIS_URL at `rediss://` always
+ * gets an encrypted transport rather than relying on scheme inference. TLS uses
+ * secure defaults (server cert validated against the system CA, SNI from the URL
+ * host).
+ */
+export function resolveBrokerRedisOptions(
+  redisUrl: string,
+  options: BrokerClientOptions = {},
+): RedisOptions {
+  const redisOptions: RedisOptions = {
+    commandTimeout: options.commandTimeoutMs ?? 5_000,
+    maxRetriesPerRequest: options.maxRetriesPerRequest ?? 3,
+  };
+  if (isSecureRedisUrl(redisUrl)) {
+    redisOptions.tls = {};
+  }
+  return redisOptions;
+}
+
 /**
  * Builds an ioredis client from a `redis://` / `rediss://` URL.
  *
@@ -28,11 +55,7 @@ export function createBrokerClient(
   redisUrl: string,
   options: BrokerClientOptions = {},
 ): BrokerClient {
-  const redisOptions: RedisOptions = {
-    commandTimeout: options.commandTimeoutMs ?? 5_000,
-    maxRetriesPerRequest: options.maxRetriesPerRequest ?? 3,
-  };
-  const client = new Redis(redisUrl, redisOptions);
+  const client = new Redis(redisUrl, resolveBrokerRedisOptions(redisUrl, options));
   client.on('error', (error: Error) => {
     console.error('[broker] redis client error:', error.message);
   });

@@ -38,9 +38,9 @@ export abstract class ConnectorConfigRepository {
   abstract updateConfig(tenantId: string, id: string, update: Partial<ConnectorConfig>): Promise<ConnectorConfig>;
   abstract deleteConfig(tenantId: string, id: string): Promise<void>;
 
-  abstract listSecrets(configId: string): Promise<ConnectorSecret[]>;
-  abstract createSecret(secret: Omit<ConnectorSecret, 'id' | 'createdAt'>): Promise<ConnectorSecret>;
-  abstract deleteSecret(id: string): Promise<void>;
+  abstract listSecrets(tenantId: string, configId: string): Promise<ConnectorSecret[]>;
+  abstract createSecret(tenantId: string, secret: Omit<ConnectorSecret, 'id' | 'createdAt'>): Promise<ConnectorSecret>;
+  abstract deleteSecret(tenantId: string, id: string): Promise<void>;
 }
 
 @Injectable()
@@ -78,18 +78,25 @@ export class InMemoryConnectorConfigRepository extends ConnectorConfigRepository
     this.configs.delete(id);
   }
 
-  async listSecrets(configId: string): Promise<ConnectorSecret[]> {
+  async listSecrets(tenantId: string, configId: string): Promise<ConnectorSecret[]> {
+    const config = this.configs.get(configId);
+    if (!config || config.tenantId !== tenantId) return [];
     return Array.from(this.secrets.values()).filter(s => s.connectorConfigId === configId);
   }
 
-  async createSecret(secret: Omit<ConnectorSecret, 'id' | 'createdAt'>): Promise<ConnectorSecret> {
+  async createSecret(tenantId: string, secret: Omit<ConnectorSecret, 'id' | 'createdAt'>): Promise<ConnectorSecret> {
+    const config = this.configs.get(secret.connectorConfigId);
+    if (!config || config.tenantId !== tenantId) throw new Error('Connector config not found');
     const created = { ...secret, id: randomUUID(), createdAt: new Date().toISOString() };
     this.secrets.set(created.id, created);
     return created;
   }
 
-  async deleteSecret(id: string): Promise<void> {
-    if (!this.secrets.has(id)) throw new Error('Connector secret not found');
+  async deleteSecret(tenantId: string, id: string): Promise<void> {
+    const existing = this.secrets.get(id);
+    if (!existing) throw new Error('Connector secret not found');
+    const config = this.configs.get(existing.connectorConfigId);
+    if (!config || config.tenantId !== tenantId) throw new Error('Connector secret not found');
     this.secrets.delete(id);
   }
 }

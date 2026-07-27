@@ -22,6 +22,14 @@ import { createApplication } from '../src/bootstrap';
  * exactly what the single-use watermark requires.
  */
 
+// D3: MFA secrets are now encrypted at rest; enrolment fails hard without a key.
+// A fixed 64-hex (32-byte) key keeps this suite deterministic.
+process.env.MFA_SECRET_KEY = 'a'.repeat(64);
+// Lockout and rate-limiting are independent defenses; raise the strict auth cap
+// so the lockout tests (which make many verify calls) exercise the lockout, not
+// the per-route rate limiter.
+process.env.AUTH_RATE_LIMIT_MAX = '1000';
+
 const OWNER = { email: 'owner@chai.local', password: 'Password123!' };
 const BASE_MS = Date.UTC(2026, 6, 27, 12, 0, 0);
 const STEP = Math.floor(BASE_MS / 1000 / 30);
@@ -242,5 +250,70 @@ describe('B1 mfaState is derived from the confirmed DB factor, not client input'
       await verifyAccessToken(rotated.accessToken, loadTokenConfig())
     ).claims;
     expect(rotatedClaims?.mfaState).toBe('REQUIRED');
+  });
+});
+
+describe('D3 MFA verification lockout (online brute-force guard)', () => {
+  it('locks TOTP verification after 5 failed attempts and then rejects even a valid code', async () => {
+    const token = await ownerAccessToken();
+    const secret = await enrollAndConfirm(token);
+    // A correctly-formatted code for a far step: passes DTO validation, but is
+    // well outside the ±1 window so verification treats it as a wrong guess.
+    const wrongCode = generateTotpCode(secret, STEP + 50);
+
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      const bad = await bearerPost('/auth/mfa/totp/verify', token, {
+        code: wrongCode,
+      });
+      expect(bad.statusCode).toBe(401);
+      expect(errorCode(bad)).toBe('MFA_CODE_INVALID');
+    }
+
+    // Now locked: a genuinely valid, fresh-step code is refused before the TOTP
+    // check even runs. Without the lockout this would mint an ENROLLED session.
+    const valid = await bearerPost('/auth/mfa/totp/verify', token, {
+      code: generateTotpCode(secret, STEP + 1),
+    });
+    expect(valid.statusCode).toBe(401);
+    expect(errorCode(valid)).toBe('MFA_CODE_INVALID');
+  });
+
+  it('does not lock below the threshold and a successful verify resets the counter', async () => {
+    const token = await ownerAccessToken();
+    const secret = await enrollAndConfirm(token);
+    const wrongCode = generateTotpCode(secret, STEP + 50);
+
+    // Round 1 (at BASE_MS): 4 failures (< 5) must NOT lock; a valid current-window
+    // code then succeeds and resets the counter. Confirm consumed step STEP, so
+    // STEP+1 is the fresh in-window step here.
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      const bad = await bearerPost('/auth/mfa/totp/verify', token, {
+        code: wrongCode,
+      });
+      expect(bad.statusCode).toBe(401);
+    }
+    const firstOk = await bearerPost('/auth/mfa/totp/verify', token, {
+      code: generateTotpCode(secret, STEP + 1),
+    });
+    expect(firstOk.statusCode).toBe(200);
+
+    // Advance two TOTP steps so a fresh in-window code exists ABOVE the replay
+    // watermark (now STEP+1) for the second success.
+    const laterStep = STEP + 2;
+    vi.setSystemTime(BASE_MS + 2 * 30 * 1000);
+
+    // Round 2: 4 more failures. Had the first success NOT reset the counter, the
+    // running total would reach 8 (≥ 5) and lock the factor, so the valid code
+    // below would be refused. It succeeding proves the reset.
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      const bad = await bearerPost('/auth/mfa/totp/verify', token, {
+        code: wrongCode,
+      });
+      expect(bad.statusCode).toBe(401);
+    }
+    const secondOk = await bearerPost('/auth/mfa/totp/verify', token, {
+      code: generateTotpCode(secret, laterStep),
+    });
+    expect(secondOk.statusCode).toBe(200);
   });
 });

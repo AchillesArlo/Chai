@@ -1,6 +1,6 @@
 import { TenantId } from '../../common/tenant-id.decorator';
 import { RequirePermission } from '../../guards/require-permission.decorator';
-import { Controller, Get, Post, Put, Delete, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Inject } from '@nestjs/common';
 import {
   IsIn,
   IsInt,
@@ -10,7 +10,7 @@ import {
   IsString,
   Min,
 } from 'class-validator';
-import { ConnectorConfigRepository, InMemoryConnectorConfigRepository } from './connector-config.repository';
+import { ConnectorConfigRepository } from './connector-config.repository';
 
 const CONNECTOR_STATUS = ['active', 'inactive', 'error', 'testing'] as const;
 
@@ -127,11 +127,9 @@ class CreateSecretDto {
 
 @Controller('api/owner/v1/connector-config')
 export class ConnectorConfigController {
-  private repo: ConnectorConfigRepository;
-
-  constructor() {
-    this.repo = new InMemoryConnectorConfigRepository();
-  }
+  constructor(
+    @Inject('ConnectorConfigRepository') private readonly repo: ConnectorConfigRepository,
+  ) {}
 
   @Get('configs')
   @RequirePermission('platform.channel.manage')
@@ -170,15 +168,19 @@ export class ConnectorConfigController {
 
   @Get('configs/:id/secrets')
   @RequirePermission('platform.channel.manage')
-  async listSecrets(@Param('id') id: string) {
-    return this.repo.listSecrets(id);
+  async listSecrets(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.repo.listSecrets(tenantId, id);
   }
 
   @Post('configs/:id/secrets')
   @RequirePermission('platform.channel.manage')
-  async createSecret(@Param('id') id: string, @Body() body: CreateSecretDto) {
+  async createSecret(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: CreateSecretDto,
+  ) {
     const { secretValueEncrypted, ...rest } = body;
-    return this.repo.createSecret({
+    return this.repo.createSecret(tenantId, {
       ...rest,
       connectorConfigId: id,
       secretValueEncrypted: Buffer.from(secretValueEncrypted, 'base64'),
@@ -187,7 +189,7 @@ export class ConnectorConfigController {
 
   @Delete('secrets/:id')
   @RequirePermission('platform.channel.manage')
-  async deleteSecret(@Param('id') id: string) {
-    return this.repo.deleteSecret(id);
+  async deleteSecret(@TenantId() tenantId: string, @Param('id') id: string) {
+    return this.repo.deleteSecret(tenantId, id);
   }
 }

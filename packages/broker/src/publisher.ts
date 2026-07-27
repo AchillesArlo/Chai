@@ -7,6 +7,28 @@ import { encodeOutboxFields, outboxStreamKey } from './outbox-stream';
  * dispatcher marks the event PUBLISHED only on `'acked'`. */
 export type OutboxPublishResult = 'acked' | 'failed';
 
+/** Default approximate stream cap. Large enough to absorb a normal consumer
+ * backlog, small enough that delivered events (which carry customer message
+ * `text`) do not linger in Redis indefinitely. */
+export const DEFAULT_STREAM_MAXLEN = 100_000;
+
+export interface OutboxPublisherOptions {
+  /**
+   * Approximate per-stream retention cap applied via `XADD ... MAXLEN ~ N`.
+   * Bounds how long delivered payloads (incl. customer message text) persist in
+   * Redis. `0` disables trimming. Defaults to `BROKER_STREAM_MAXLEN` or
+   * {@link DEFAULT_STREAM_MAXLEN}.
+   */
+  maxLen?: number;
+}
+
+function maxLenFromEnv(): number {
+  const raw = process.env.BROKER_STREAM_MAXLEN;
+  if (raw === undefined || raw === '') return DEFAULT_STREAM_MAXLEN;
+  const value = Number.parseInt(raw, 10);
+  return Number.isInteger(value) && value >= 0 ? value : DEFAULT_STREAM_MAXLEN;
+}
+
 /**
  * Publishes outbox events to Redis Streams, one stream per event type.
  *
@@ -15,18 +37,40 @@ export type OutboxPublishResult = 'acked' | 'failed';
  * of truth: an event is only ever reported acknowledged when the broker
  * actually accepted the write, so a broker failure keeps the event claimable
  * for redelivery.
+ *
+ * Streams are capped with an approximate `MAXLEN ~` so old delivered entries age
+ * out instead of retaining customer PII forever.
+ * ponytail: `~` trims in whole macro-nodes, so the live length can briefly exceed
+ * the cap by up to ~one node — the accepted price of O(1) trimming. The DB outbox
+ * is still authoritative, so size the cap above peak consumer backlog: an entry
+ * trimmed before a lagging consumer reads it is gone from Redis (the DB row is
+ * already PUBLISHED). Set BROKER_STREAM_MAXLEN=0 to disable.
  */
 export class RedisStreamsOutboxPublisher {
-  constructor(private readonly redis: BrokerClient) {}
+  private readonly maxLen: number;
+
+  constructor(
+    private readonly redis: BrokerClient,
+    options: OutboxPublisherOptions = {},
+  ) {
+    this.maxLen = options.maxLen ?? maxLenFromEnv();
+  }
 
   async publish(claim: OutboxClaim): Promise<OutboxPublishResult> {
     const streamKey = outboxStreamKey(claim.eventType);
     try {
-      const entryId = await this.redis.xadd(
-        streamKey,
-        '*',
-        ...encodeOutboxFields(claim),
-      );
+      const fields = encodeOutboxFields(claim);
+      const entryId =
+        this.maxLen > 0
+          ? await this.redis.xadd(
+              streamKey,
+              'MAXLEN',
+              '~',
+              this.maxLen,
+              '*',
+              ...fields,
+            )
+          : await this.redis.xadd(streamKey, '*', ...fields);
       // XADD returns the generated entry id on success. A null/empty reply means
       // the write did not land — reporting 'acked' would be the silent data-loss
       // bug this class exists to remove.
