@@ -210,3 +210,171 @@ Perkirakan 2–4 jam terfokus per jalur bila diparalelkan.
 seperti `docs/plans/2026-07-27-rencana-100-persen.md`: fase berurutan, resep konkret per
 butir, gerbang verifikasi, dan buku besar progres. Jangan mencampur audit dengan
 implementasi dalam satu sesi — pemisahan itulah yang membuat temuannya bisa dipercaya.
+
+
+---
+
+## 10. Protokol eksekusi untuk agen — ikuti persis
+
+Bagian ini mengubah rencana di atas menjadi perintah kerja yang bisa dijalankan tanpa
+menafsirkan. Bila bagian sebelumnya dan bagian ini seolah berbeda, **bagian ini yang
+dipakai** untuk cara bekerja; bagian sebelumnya tetap dipakai untuk metode klasifikasi.
+
+### 10.1 Satuan kerja adalah SATU DOKUMEN, bukan satu jalur
+
+Jangan mencoba menyelesaikan satu jalur dalam satu tarikan napas. Kerjakan **satu dokumen
+blueprint sampai tuntas, tulis hasilnya ke berkas, baru ambil dokumen berikutnya.**
+
+Alasannya praktis: bila konteks Anda terpotong di tengah jalan, pekerjaan yang sudah
+tertulis di berkas tetap selamat. Pekerjaan yang hanya ada di kepala Anda hilang.
+
+### 10.2 Daftar perintah kerja
+
+Semua path relatif ke `Omnichannel_AI_Platform_Engineering_Blueprint_v1.2/`.
+
+| # | Dokumen | Baris | Jalur | Berkas keluaran |
+|---|---|---|---|---|
+| 1 | `10_SECURITY_PRIVACY_AND_RBAC.md` | 386 | A | `docs/audit/2026-07-27/jalur-a-keamanan-tenancy.md` |
+| 2 | `05_DATA_MODEL_AND_TENANCY.md` | 927 | A | (tambahkan ke berkas jalur A) |
+| 3 | `17_PAYMENT_AND_LOGISTICS_SPEC.md` | 683 | C | `docs/audit/2026-07-27/jalur-c-payment-logistics.md` |
+| 4 | `06_API_AND_REALTIME_CONTRACT.md` | 482 | B | `docs/audit/2026-07-27/jalur-b-kontrak-event.md` |
+| 5 | `07_EVENTS_AUTOMATIONS_AND_JOBS.md` | 545 | B | (tambahkan ke berkas jalur B) |
+| 6 | `08_AI_AGENT_AND_KNOWLEDGE.md` | 433 | D | `docs/audit/2026-07-27/jalur-d-ai-connector.md` |
+| 7 | `09_CHANNEL_AND_CONNECTOR_SPEC.md` | 450 | D | (tambahkan ke berkas jalur D) |
+| 8 | `02_SYSTEM_ARCHITECTURE.md` | 437 | F | `docs/audit/2026-07-27/jalur-f-operasional.md` |
+| 9 | `11_ANALYTICS_AND_KPI_DICTIONARY.md` | 453 | F | (tambahkan ke berkas jalur F) |
+| 10 | `12_QA_AND_TEST_STRATEGY.md` | 456 | F | (tambahkan ke berkas jalur F) |
+| 11 | `13_DEVOPS_SRE_AND_RUNBOOKS.md` | 428 | F | (tambahkan ke berkas jalur F) |
+| 12 | `03_UX_UI_SPECIFICATION.md` | 878 | E | `docs/audit/2026-07-27/jalur-e-frontend.md` |
+| 13 | `04_DESIGN_SYSTEM.md` | 399 | E | (tambahkan ke berkas jalur E) |
+
+`15_ADR_REGISTER.md` (392 baris) dibaca saat mengerjakan dokumen mana pun yang menyebut
+ADR/DEC tertentu; setiap ADR dan DEC wajib dinilai oleh jalur yang paling relevan.
+
+### 10.3 Prosedur untuk satu dokumen — tujuh langkah
+
+**Langkah 1.** Baca dokumen itu seluruhnya. Untuk dokumen di atas 500 baris, baca dalam
+potongan 200 baris berurutan sampai habis. Jangan menyampel, jangan melompat ke bagian
+yang terdengar penting saja.
+
+**Langkah 2.** Kumpulkan pernyataan normatif saja: yang memuat "MUST", "WAJIB", "harus",
+"tidak boleh", "dilarang", plus setiap kriteria penerimaan (AC), ADR, dan DEC. Prosa
+penjelas, latar belakang, dan contoh **bukan** persyaratan.
+
+**Langkah 3.** Beri nomor `REQ-<nomor-dokumen>-<urut tiga digit>`. Contoh: persyaratan
+keempat belas di `10_SECURITY` menjadi `REQ-10-014`. Nomor urut mengikuti urutan
+kemunculan di dokumen.
+
+**Langkah 4.** Untuk setiap REQ, cari implementasinya di kode. Pakai alat termurah dulu:
+
+```powershell
+# 1) bila graf pengetahuan tersedia, ini paling murah
+graphify query "<pertanyaan tentang persyaratan ini>"
+
+# 2) pencarian teks
+Select-String -Path apps/api/src/**/*.ts -Pattern '<pola>' | ForEach-Object { "$($_.Filename):$($_.LineNumber): $($_.Line.Trim())" }
+
+# 3) baru setelah itu, baca berkas yang relevan
+```
+
+Catat perintah yang Anda jalankan. Perintah itu bagian dari bukti.
+
+**Langkah 5.** Klasifikasikan ke tepat satu dari lima kelas di §3 Langkah 3, dan beri
+severity mengikuti §3 Langkah 4.
+
+**Langkah 6.** Tulis blok temuan memakai template di §10.5, lalu **append ke berkas
+keluaran**. Jangan menunggu dokumen berikutnya. Jangan menyimpan di kepala.
+
+**Langkah 7.** Jalankan self-check §10.7. Baru lanjut ke dokumen berikutnya.
+
+### 10.4 Aturan bukti — ini yang paling sering dilanggar
+
+Kelas `TERPENUHI` **hanya** boleh Anda tulis bila Anda sudah membuka berkasnya dan melihat
+kodenya. Menemukan nama yang mirip lewat pencarian teks **tidak cukup** — banyak hal di
+repo ini terdefinisi tetapi tidak pernah dipakai (`AuditMiddleware` adalah contohnya:
+kelasnya ada, call site-nya nol, jadi persyaratannya **tidak** terpenuhi).
+
+Karena itu, untuk setiap `TERPENUHI` jawab dua hal:
+
+1. Di mana kodenya? (path:baris)
+2. Apakah kode itu benar-benar terpanggil di jalur produksi? Buktikan call site-nya, atau
+   sebutkan tes yang menegakkannya.
+
+Bila jawaban nomor 2 tidak ada, kelasnya `SEBAGIAN`, bukan `TERPENUHI`.
+
+Untuk `HILANG`, sertakan perintah pencarian yang menghasilkan nol keluaran. "Saya tidak
+menemukannya" tanpa perintah bukan bukti.
+
+### 10.5 Template blok temuan — salin bentuk ini
+
+```markdown
+### REQ-10-021 - Secret at rest terenkripsi - SEBAGIAN - HIGH
+
+**Persyaratan** (`10_SECURITY §4.2`): "<kutipan pendek dari blueprint>"
+
+**Kondisi nyata**: <apa yang benar-benar ada di kode>
+
+**Bukti**:
+- `apps/api/src/auth/mfa-secret-crypto.ts:41-60` - enkripsi AES-256-GCM ada
+- `packages/database/migrations/0031_connector_config.sql:24` - kolom secret polos
+- Perintah: `Select-String ... -Pattern 'rotate'` -> 0 hasil
+
+**Yang kurang**: <spesifik, bisa ditutup sebagai satu pekerjaan>
+```
+
+Setiap temuan `SEBAGIAN`, `HILANG`, atau `BERTENTANGAN` wajib punya baris **Yang kurang**
+yang cukup spesifik untuk dijadikan satu tiket pekerjaan. Kalau baris itu berbunyi
+"frontend belum lengkap", itu gagal: pecah menjadi beberapa REQ.
+
+### 10.6 Yang DILARANG
+
+1. **Jangan mengubah kode apa pun.** Audit ini read-only. Satu-satunya berkas yang boleh
+   Anda tulis adalah di `docs/audit/2026-07-27/`. Bila Anda melihat perbaikan satu baris
+   yang menggoda, catat sebagai temuan dan lanjut.
+2. **Jangan menjalankan perintah destruktif**: tanpa `git reset`, `git clean`,
+   `git checkout`, tanpa `Remove-Item`, tanpa perubahan skema database.
+3. **Jangan memercayai dokumen internal sebagai bukti.** `README.md`,
+   `docs/plans/2026-07-26-blueprint-gap-remediation.md`, dan komentar kode adalah klaim,
+   bukan bukti. Keduanya sudah pernah salah. Bukti hanya kode dan keluaran perintah.
+4. **Jangan memakai kata ragu sebagai kesimpulan.** Dilarang menulis "sepertinya",
+   "kemungkinan sudah", "mungkin terpenuhi", "tampaknya". Bila Anda tidak tahu, kelasnya
+   `TIDAK-TERVERIFIKASI` dan sebutkan apa yang dibutuhkan untuk memutuskannya.
+5. **Jangan menyampel dokumen** lalu menyimpulkan keseluruhan. Bila Anda melewatkan suatu
+   bagian, tulis eksplisit bagian mana dan mengapa.
+6. **Jangan menggabungkan beberapa kekurangan** menjadi satu temuan besar.
+
+### 10.7 Self-check setelah setiap dokumen
+
+Jawab tertulis, singkat:
+
+1. Sudah membaca dokumen ini dari baris pertama sampai terakhir? Bila ada yang dilewati,
+   bagian mana?
+2. Berapa REQ yang dihasilkan, dan berapa yang `TERPENUHI` / `SEBAGIAN` / `HILANG` /
+   `BERTENTANGAN` / `TIDAK-TERVERIFIKASI`?
+3. Setiap `TERPENUHI` sudah punya path:baris **dan** bukti bahwa kodenya terpanggil?
+4. Setiap `HILANG` sudah punya perintah pencarian yang menghasilkan nol?
+5. Sudah di-append ke berkas keluaran? (bukan hanya ada di respons Anda)
+6. `git status --porcelain` hanya menampilkan berkas di `docs/audit/`?
+
+### 10.8 Format laporan ke pemilik repo setelah setiap dokumen
+
+```
+DOKUMEN <n>/13 - <nama dokumen> (<jumlah> baris)
+REQ dihasilkan: <angka>
+  TERPENUHI <n> | SEBAGIAN <n> | HILANG <n> | BERTENTANGAN <n> | TIDAK-TERVERIFIKASI <n>
+Temuan severity tertinggi: <ID> - <ringkas satu baris>
+Berkas keluaran: <path> (<jumlah baris sekarang>)
+Self-check 6 butir: <ringkas, sebutkan bila ada yang "tidak">
+```
+
+### 10.9 Bila macet
+
+- **Dokumen menyebut komponen yang tidak Anda temukan sama sekali.** Itu temuan `HILANG`,
+  bukan kegagalan Anda. Catat perintah pencariannya dan lanjut.
+- **Persyaratan terlalu kabur untuk diverifikasi.** Klasifikasikan
+  `TIDAK-TERVERIFIKASI`, kutip bagian yang kabur, sebutkan apa yang perlu diklarifikasi.
+- **Anda ragu antara `TERPENUHI` dan `SEBAGIAN`.** Pilih `SEBAGIAN`. Audit yang terlalu
+  ketat menghasilkan pekerjaan tambahan; audit yang terlalu longgar menghasilkan rasa aman
+  yang salah, dan itu jauh lebih mahal.
+- **Konteks Anda mulai penuh.** Selesaikan dokumen yang sedang dikerjakan, tulis ke berkas,
+  laporkan posisi Anda, lalu berhenti. Jangan memulai dokumen baru dengan konteks sisa.
