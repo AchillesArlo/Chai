@@ -11,7 +11,11 @@ export async function POST(): Promise<NextResponse> {
   };
   const jar = await cookies();
   await logoutOnServer(config, jar);
-  return NextResponse.redirect(new URL('/login', process.env.APP_URL ?? 'http://localhost:3002'), {
+  // basePath ('/portal', see next.config.ts) does NOT auto-prefix a redirect
+  // whose base URL is an absolute external origin (only next/link, next/router,
+  // and in-middleware NextResponse.redirect(new URL(path, request.url)) get
+  // that treatment) — so the /portal segment is added explicitly here.
+  return NextResponse.redirect(new URL('/portal/login', process.env.APP_URL ?? 'http://localhost:3002'), {
     status: 303,
   });
 }

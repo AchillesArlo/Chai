@@ -7,6 +7,14 @@ export interface LogoutButtonProps {
   className?: string;
   label?: string;
   logoutPath?: string;
+  /**
+   * Fallback navigation target when the logout request does not itself
+   * redirect (e.g. network failure). Callers under a Next.js basePath (see
+   * apps/client-portal/next.config.ts) must pass their prefixed login path
+   * here — this component runs client-side via window.location, which
+   * basePath does NOT auto-prefix.
+   */
+  postLogoutPath?: string;
 }
 
 /**
@@ -17,6 +25,7 @@ export function LogoutButton({
   className = '',
   label = 'Sign out',
   logoutPath = '/logout',
+  postLogoutPath = '/login',
 }: LogoutButtonProps) {
   const [submitting, setSubmitting] = useState(false);
 
@@ -28,11 +37,11 @@ export function LogoutButton({
         if (res.redirected) {
           window.location.href = res.url;
         } else {
-          window.location.href = '/login';
+          window.location.href = postLogoutPath;
         }
       })
       .catch(() => {
-        window.location.href = '/login';
+        window.location.href = postLogoutPath;
       })
       .finally(() => setSubmitting(false));
   }

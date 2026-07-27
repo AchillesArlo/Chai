@@ -294,14 +294,21 @@ services:
     environment:
       NODE_ENV: production
       REALTIME_PORT: 3010
+      # Required: main.ts refuses to start with the in-memory event store
+      # (not shared across replicas, loses the replay window on restart).
+      DATABASE_URL: postgres://chai_api:${CHAI_API_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis-master:6379
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENABLE_METRICS: "true"
     depends_on:
+      postgres:
+        condition: service_healthy
       redis-master:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3010/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3010/health"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -677,7 +684,9 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3002/"]
+      # basePath: '/portal' (next.config.ts) means / now 404s; probe a real
+      # route under the prefix instead.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3002/portal/login"]
       interval: 30s
       timeout: 10s
       retries: 5

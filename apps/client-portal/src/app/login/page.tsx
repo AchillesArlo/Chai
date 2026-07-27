@@ -87,7 +87,10 @@ export default async function LoginPage({
         ) : null}
         <footer className="mt-6 border-t border-slate-100 pt-4 text-xs text-slate-500">
           <p>Owner?{' '}
-            <a className="text-brand-600 hover:underline" href="http://localhost:3000/login">
+            {/* basePath ('/portal', next.config.ts) only auto-prefixes
+                next/link/router; a plain <a> to owner-console (nginx root,
+                outside this app's basePath) must stay an absolute path. */}
+            <a className="text-brand-600 hover:underline" href="/login">
               Owner console sign-in
             </a>
           </p>

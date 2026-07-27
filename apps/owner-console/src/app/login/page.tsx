@@ -70,7 +70,8 @@ export default async function LoginPage({
         </form>
         <footer className="mt-6 border-t border-slate-700 pt-4 text-xs text-slate-400">
           <p>Client user?{' '}
-            <a className="text-brand-400 hover:underline" href="http://localhost:3002/login">
+            {/* Absolute path, not a container port: this app sits at nginx root while client-portal is proxied under /portal (see infra nginx.conf). A relative /login would 404 here. */}
+            <a className="text-brand-400 hover:underline" href="/portal/login">
               Client portal sign-in
             </a>
           </p>
