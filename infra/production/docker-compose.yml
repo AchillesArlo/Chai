@@ -208,10 +208,23 @@ services:
     build:
       context: ../..
       dockerfile: infra/Dockerfile
-    command: ["pnpm", "--filter", "@chai/database", "run", "migrate"]
+    # Migrations (0051) deliberately create chai_api/chai_worker WITHOUT a
+    # password -- credentials must never live in a checksum-pinned migration
+    # file. provision-runtime-passwords is the out-of-band step the
+    # migration's own comment describes, run every startup as chai_admin
+    # (idempotent: ALTER ROLE always succeeds, it just resets the password to
+    # the current env value). Without this, chai_api/chai_worker can NEVER
+    # authenticate on a fresh volume and every request touching the database
+    # fails with a swallowed 500 (verified: role has no password set at all).
+    command:
+      - sh
+      - -c
+      - "pnpm --filter @chai/database run migrate && pnpm --filter @chai/database run provision-passwords"
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-chai}
+      CHAI_API_DB_PASSWORD: ${CHAI_API_DB_PASSWORD:?CHAI_API_DB_PASSWORD is required}
+      CHAI_WORKER_DB_PASSWORD: ${CHAI_WORKER_DB_PASSWORD:?CHAI_WORKER_DB_PASSWORD is required}
     depends_on:
       postgres:
         condition: service_healthy

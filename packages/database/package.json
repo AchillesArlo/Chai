@@ -10,6 +10,7 @@
     "build": "tsc --project tsconfig.json --noEmit",
     "lint": "eslint src test vitest.integration.config.ts",
     "migrate": "node --import tsx/esm src/migrate-cli.ts",
+    "provision-passwords": "node --import tsx/esm src/provision-runtime-passwords.ts",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "test": "vitest run --root . --passWithNoTests",
     "test:integration": "vitest run --config vitest.integration.config.ts"
