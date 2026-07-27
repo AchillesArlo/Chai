@@ -92,8 +92,10 @@ USER node
 # Default entrypoint targets the API; compose overrides `command:` per service.
 CMD ["pnpm", "--filter", "@chai/api", "start"]
 
-# Meaningful API healthcheck: probes the app's real /health endpoint rather than
-# merely checking the process is alive. busybox wget ships in the alpine base.
+# Meaningful API healthcheck: probes the app's real /api/v1/health endpoint rather
+# than merely checking the process is alive. busybox wget ships in the alpine base.
+# 127.0.0.1 (not localhost): Fastify binds IPv4 0.0.0.0, but wget resolves
+# "localhost" to ::1 first on this base image, which the app is not listening on.
 # Compose overrides this for non-HTTP services.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=5 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/v1/health || exit 1
