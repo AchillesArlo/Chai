@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 
 // ponytail: in-memory DLQ store; swap for Postgres when persistence is needed.
 
@@ -28,7 +29,9 @@ export class DlqRepository {
    * Add an entry to the dead-letter queue.
    */
   add(entry: Omit<DeadLetterEntry, 'id' | 'deadLetteredAt'>): DeadLetterEntry {
-    const id = `dlq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    // randomUUID, not Math.random: a DLQ id is the handle operators use to
+    // replay or reject a poisoned event, so a collision would replay the wrong one.
+    const id = `dlq_${Date.now()}_${randomUUID()}`;
     const record: DeadLetterEntry = {
       ...entry,
       deadLetteredAt: new Date(),

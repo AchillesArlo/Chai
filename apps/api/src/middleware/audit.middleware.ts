@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import type { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
-import { createAuditLog } from '@chai/domain';
+import { createAuditLog, getPiiRedactionPipeline } from '@chai/domain';
 
 import {
   DATABASE,
@@ -25,6 +25,19 @@ const SKIP_AUDIT_PATHS = new Set([
   '/api/openapi',
   '/api/openapi-json',
   '/api/client/v1/audit-logs',
+  // Credential surfaces: never audit these bodies at all. The body redaction
+  // below is the safety net, but the login/refresh/MFA payloads carry nothing
+  // worth auditing beyond the fact of the attempt (already covered by the
+  // auth failure counters), so the cheapest correct answer is to skip them.
+  '/auth/login',
+  '/auth/refresh',
+  '/auth/logout',
+  '/auth/mfa/totp/enroll',
+  '/auth/mfa/totp/confirm',
+  '/auth/mfa/totp/verify',
+  '/api/client/v1/auth/login',
+  '/api/client/v1/auth/refresh',
+  '/api/client/v1/auth/logout',
 ]);
 
 function extractResourceType(path: string): string {
@@ -46,6 +59,20 @@ function extractResourceId(path: string): string | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * Strips credentials and PII out of a request body before it is persisted as
+ * audit metadata, reusing the shared audit redaction pipeline (which covers
+ * password/token/secret/apiKey/authorization plus email, phone, card, SSN,
+ * NIK, and IP). Non-object bodies carry no field names to classify, so they
+ * are dropped rather than guessed at.
+ */
+function redactBody(body: unknown): Record<string, unknown> | undefined {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    return undefined;
+  }
+  return getPiiRedactionPipeline().redact(body as Record<string, unknown>).redacted;
 }
 
 @Injectable()
@@ -85,7 +112,10 @@ export class AuditMiddleware implements NestInterceptor {
       metadata: {
         httpMethod: method,
         path: request.url,
-        body: request.body,
+        // Redacted, never raw: this metadata is PERSISTED to the audit table,
+        // so an un-redacted body would store passwords, tokens, and customer
+        // PII permanently in an append-only table nobody can scrub.
+        body: redactBody(request.body),
       },
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'],

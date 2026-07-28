@@ -1,4 +1,5 @@
 // ponytail: token & cost accounting per tenant. In-memory; swap for Postgres when persistence is needed.
+import { randomUUID } from 'node:crypto';
 
 /**
  * Usage record for a single completion.
@@ -37,7 +38,9 @@ export class CostAccountingStore {
    * Record a usage entry.
    */
   record(entry: Omit<UsageRecord, 'recordedAt' | 'usageId'>): UsageRecord {
-    const usageId = `usage_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    // randomUUID, not Math.random: usage ids underpin per-tenant cost
+    // accounting, so a collision would silently merge two tenants' charges.
+    const usageId = `usage_${Date.now()}_${randomUUID()}`;
     const record: UsageRecord = {
       ...entry,
       recordedAt: new Date(),

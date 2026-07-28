@@ -11,6 +11,7 @@ export type PiiFieldClass =
   | 'ssn'
   | 'nik'
   | 'ip_address'
+  | 'credential'
   | 'none';
 
 /**
@@ -26,6 +27,15 @@ export interface PiiRedactionRule {
  * Default redaction rules — field names that commonly contain PII.
  */
 const DEFAULT_RULES: PiiRedactionRule[] = [
+  // Credentials first: a secret is never merely PII, and leaking one into an
+  // audit row or a trace span is worse than leaking an email. Matches
+  // password/newPassword, token/accessToken/refreshToken, secret/clientSecret,
+  // apiKey, and Authorization headers.
+  {
+    fieldPattern: /password|passphrase|token|secret|apiKey|api_key|authorization|credential/i,
+    class: 'credential',
+    replacement: '[REDACTED_CREDENTIAL]',
+  },
   { fieldPattern: /email|e-mail|emailAddress/i, class: 'email', replacement: '[REDACTED_EMAIL]' },
   { fieldPattern: /phone|mobile|phoneNumber|contactNumber/i, class: 'phone', replacement: '[REDACTED_PHONE]' },
   { fieldPattern: /creditCard|cardNumber|pan/i, class: 'credit_card', replacement: '[REDACTED_CARD]' },
@@ -114,18 +124,30 @@ export class PiiRedactionPipeline {
     for (const [key, value] of Object.entries(obj)) {
       const fieldPath = path ? `${path}.${key}` : key;
       const fieldClass = this.classifyField(key);
+      const isPlainObject =
+        value !== null && typeof value === 'object' && !Array.isArray(value);
 
-      if (fieldClass !== 'none') {
-        redactions.push({ class: fieldClass, field: fieldPath });
-        result[key] = this.redactValue(value, fieldClass);
-      } else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-        result[key] = this.redactObject(value as Record<string, unknown>, redactions, fieldPath);
+      // Recurse into containers BEFORE honouring the field classification.
+      // A classified name can still hold an object (e.g. `credentials: {
+      // authorization: '...' }`): replacing it via redactValue() would return
+      // the object untouched, because redactValue only rewrites strings — so
+      // the nested secret would survive. Descending first guarantees every
+      // leaf is classified on its own name.
+      if (isPlainObject) {
+        result[key] = this.redactObject(
+          value as Record<string, unknown>,
+          redactions,
+          fieldPath,
+        );
       } else if (Array.isArray(value)) {
         result[key] = value.map((v) =>
           v !== null && typeof v === 'object' && !Array.isArray(v)
             ? this.redactObject(v as Record<string, unknown>, redactions, fieldPath)
-            : this.redactValue(v)
+            : this.redactValue(v, fieldClass)
         );
+      } else if (fieldClass !== 'none') {
+        redactions.push({ class: fieldClass, field: fieldPath });
+        result[key] = this.redactValue(value, fieldClass);
       } else {
         result[key] = this.redactValue(value);
       }

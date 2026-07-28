@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { ActionNode, ActionType } from '../flow-types';
 
 /**
@@ -53,5 +55,8 @@ function node(action: ActionType, config: Record<string, unknown>): ActionNode {
 }
 
 function randomId(): string {
-  return Math.random().toString(36).slice(2, 10);
+  // randomUUID, not Math.random: these ids identify persisted automation nodes,
+  // and Math.random().toString(36).slice(2, 10) gives ~41 bits with no collision
+  // guarantee across concurrent builder sessions.
+  return randomUUID();
 }

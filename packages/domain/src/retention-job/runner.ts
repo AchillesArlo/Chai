@@ -1,5 +1,6 @@
 // ponytail: retention job runner — executes retention policies on a schedule.
 // Pairs with audit-immutability verification to ensure compliance.
+import { randomUUID } from 'node:crypto';
 
 /**
  * Retention policy definition.
@@ -63,7 +64,9 @@ export class RetentionJobRunner {
   async runPolicy(policyId: string): Promise<RetentionJobRecord> {
     const policy = this.policies.get(policyId);
     const startedAt = new Date();
-    const jobId = `retention_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    // randomUUID, not Math.random: retention job ids key the compliance audit
+    // trail, so a duplicate would conflate two deletion runs.
+    const jobId = `retention_${Date.now()}_${randomUUID()}`;
 
     if (!policy) {
       const job: RetentionJobRecord = {

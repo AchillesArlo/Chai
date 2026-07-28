@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { TriggerNode, TriggerType } from '../flow-types';
 
 /**
@@ -57,5 +59,7 @@ export const TRIGGER_TYPES: readonly TriggerType[] = [
 ] as const;
 
 function randomId(): string {
-  return Math.random().toString(36).slice(2, 10);
+  // randomUUID, not Math.random: see actions.ts — persisted node ids need a
+  // real collision guarantee.
+  return randomUUID();
 }

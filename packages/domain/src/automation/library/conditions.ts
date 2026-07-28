@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { ConditionNode, ConditionType } from '../flow-types';
 
 /**
@@ -39,5 +41,7 @@ function node(condition: ConditionType, config: Record<string, unknown>): Condit
 }
 
 function randomId(): string {
-  return Math.random().toString(36).slice(2, 10);
+  // randomUUID, not Math.random: see actions.ts — persisted node ids need a
+  // real collision guarantee.
+  return randomUUID();
 }
