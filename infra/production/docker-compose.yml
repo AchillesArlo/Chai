@@ -113,7 +113,21 @@ services:
   # network; container-port 26379 is open to the network without a host mapping.)
   redis-sentinel:
     image: redis:7.4-alpine
-    command: redis-sentinel /etc/redis/sentinel.conf
+    # Copy the mounted (read-only, git-tracked) config to a writable path,
+    # append the master password from the environment, then start. Sentinel
+    # rewrites its own config at runtime, so it cannot run against a :ro mount,
+    # and the password must not live in a git-tracked file. Both failure modes
+    # were verified: ":ro" -> "config file is not writable ... Exiting", and a
+    # missing auth-pass leaves sentinel unable to reach the master at all.
+    command:
+      - sh
+      - -c
+      - |
+        cp /etc/redis/sentinel.conf /tmp/sentinel.conf &&
+        echo "sentinel auth-pass chai-master ${REDIS_PASSWORD}" >> /tmp/sentinel.conf &&
+        exec redis-sentinel /tmp/sentinel.conf
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     volumes:
       - ./sentinel.conf:/etc/redis/sentinel.conf:ro
     depends_on:
@@ -781,7 +795,9 @@ services:
   # ============================================================================
 
   prometheus:
-    image: prom/prometheus:latest
+    # Pinned, never :latest (repo rule, see infra/Dockerfile): an unpinned
+    # monitoring stack can change scrape/alert behaviour on a redeploy.
+    image: prom/prometheus:v3.13.1
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -792,9 +808,14 @@ services:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ../../infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # prometheus.yml declares `rule_files: [alerts.yml]`. Without this mount
+      # promtool fails with `"/etc/prometheus/alerts.yml" does not point to an
+      # existing file` and Prometheus refuses the config, so every alert rule
+      # silently never loads (verified with promtool check config).
+      - ../../infra/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:9090/-/healthy"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -811,7 +832,8 @@ services:
       - monitoring
 
   grafana:
-    image: grafana/grafana:latest
+    # Pinned, never :latest (repo rule, see infra/Dockerfile).
+    image: grafana/grafana:13.1.1
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
@@ -843,7 +865,9 @@ services:
       - monitoring
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    # Pinned: the repo's own rule (see infra/Dockerfile) is an explicit tag,
+    # never :latest, so a redeploy cannot silently change the collector.
+    image: otel/opentelemetry-collector-contrib:0.157.0
     command: ['--config=/etc/otel-collector-config.yaml']
     ports:
       - "4317:4317"   # OTLP gRPC receiver
@@ -853,11 +877,14 @@ services:
     depends_on:
       prometheus:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:13133"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    # No healthcheck on purpose. This image is distroless: it ships the
+    # collector binary with no shell and no wget/curl, so any Docker
+    # HEALTHCHECK command fails to exec and the container is reported
+    # `unhealthy` forever even while it works (verified: `docker run
+    # --entrypoint sh` -> "sh: executable file not found in $PATH"). A
+    # permanently-red health status is worse than none: it trains operators to
+    # ignore health output. Probe the collector's own health_check extension on
+    # :13133 from outside (Prometheus blackbox or the orchestrator) instead.
     deploy:
       resources:
         limits:

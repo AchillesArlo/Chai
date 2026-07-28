@@ -1,0 +1,5 @@
+# Kunci privat dan sertifikat tidak pernah masuk git.
+# README.md di direktori ini menjelaskan cara menyediakannya saat deploy.
+*.pem
+*.crt
+*.key

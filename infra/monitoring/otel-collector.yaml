@@ -17,8 +17,12 @@ processors:
         action: upsert
 
 exporters:
-  logging:
-    loglevel: info
+  # `debug` replaces the removed `logging` exporter. The collector REJECTS the
+  # whole config on `logging` ("the logging exporter has been deprecated, use
+  # the debug exporter instead") and exits, so the collector never started --
+  # verified with `otelcol-contrib validate`.
+  debug:
+    verbosity: normal
   # ponytail: production exporter (e.g. otlphttp) lands with managed backend.
 
 service:
@@ -26,8 +30,8 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch, attributes]
-      exporters: [logging]
+      exporters: [debug]
     metrics:
       receivers: [otlp]
       processors: [batch, attributes]
-      exporters: [logging]
+      exporters: [debug]
