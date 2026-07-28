@@ -20,7 +20,22 @@ services:
   # ============================================================================
   # Infrastructure Services
   # ============================================================================
-  
+
+  # Prepares the WAL archive volume before postgres starts (K-04 PITR). A fresh
+  # named volume is created root-owned, but postgres runs as uid 70, so
+  # archive_command would fail with "Permission denied" on every segment --
+  # verified by running it. One-shot, idempotent, and ordered ahead of postgres
+  # via depends_on: service_completed_successfully.
+  postgres-wal-init:
+    image: postgres:17.6-alpine
+    user: root
+    command: ["sh", "-c", "mkdir -p /wal_archive && chown 70:70 /wal_archive && chmod 700 /wal_archive"]
+    volumes:
+      - postgres_wal_archive:/wal_archive
+    restart: "no"
+    networks:
+      - backend
+
   postgres:
     image: postgres:17.6-alpine
     environment:
@@ -33,8 +48,16 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Target of archive_command in postgres.conf (K-04 PITR). Must be
+      # writable by the postgres user and must survive container replacement,
+      # otherwise the WAL chain — and with it the ability to recover to a point
+      # in time — is lost.
+      - postgres_wal_archive:/wal_archive
       - ./postgres.conf:/etc/postgresql/postgresql.conf:ro
     command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    depends_on:
+      postgres-wal-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-chai_admin} -d ${POSTGRES_DB:-chai}"]
       interval: 10s
@@ -938,6 +961,11 @@ volumes:
   postgres_data:
     driver: local
   postgres_backups:
+    driver: local
+  # WAL segments archived by archive_command (K-04 PITR). Paired with the
+  # pg_dump base backups in postgres_backups: a dump alone gives RPO = dump
+  # interval, dump + WAL gives RPO = archive lag.
+  postgres_wal_archive:
     driver: local
   redis_master_data:
     driver: local

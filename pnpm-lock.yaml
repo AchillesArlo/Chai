@@ -57,6 +57,9 @@ importers:
       '@chai/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@chai/broker':
+        specifier: workspace:*
+        version: link:../../packages/broker
       '@chai/connector-sdk':
         specifier: workspace:*
         version: link:../../packages/connector-sdk

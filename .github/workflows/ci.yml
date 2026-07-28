@@ -6,7 +6,9 @@ name: ci
 on:
   pull_request:
   push:
-    branches: [main]
+    # This repo's default branch is `master` (see `git branch`). Listing only
+    # `main` meant push events never matched and CI never ran on a merge.
+    branches: [main, master]
 
 jobs:
   verify:
@@ -32,4 +34,20 @@ jobs:
 
       - run: pnpm run typecheck
 
+      # Blocking, and deliberately not optional: a broken `apps/api` bundle
+      # (an esbuild alias that could not resolve `@chai/auth/server`) shipped
+      # undetected because lint/typecheck/test all pass on source while the
+      # production bundle never builds. typecheck uses moduleResolution
+      # "Bundler"; only this step exercises the real esbuild/Next build.
+      - run: pnpm run build
+
       - run: pnpm run test
+
+      # Docker services are available on GitHub runners, so the suites that
+      # need a real PostgreSQL (RLS policies, the migration runner, the
+      # tenant-isolation matrix) can and should gate merges too — they are the
+      # only tests that prove the invariants at the database level.
+      - run: pnpm --filter @chai/database run test:integration
+      - run: pnpm --filter @chai/domain run test:integration
+      - run: pnpm --filter @chai/api run test:integration
+      - run: pnpm --filter @chai/api run test:e2e

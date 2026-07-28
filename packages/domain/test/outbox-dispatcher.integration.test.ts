@@ -1,6 +1,6 @@
 import { createDatabase, withTenantTransaction } from '@chai/database';
 import { inject } from 'vitest';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   claimOutboxBatch,
@@ -33,6 +33,17 @@ describe('outbox dispatcher — publish-ack and dead-letter guarantees', () => {
     adminDatabaseUrl = inject('adminDatabaseUrl');
     workerDatabaseUrl = inject('workerDatabaseUrl');
     await seedFoundation(adminDatabaseUrl);
+  });
+
+  // Clean BEFORE as well as after. The integration suite shares one database
+  // across test files (fileParallelism is off, so they run in sequence), and
+  // earlier files — conversations/leads commit business mutations, which write
+  // outbox rows via commitBusinessMutation — leave pending events behind.
+  // claimOutboxBatch(limit: 10) then claims those too, so `toHaveLength(1)`
+  // failed intermittently with "got 8". Resetting first makes this file's
+  // starting state deterministic regardless of what ran before it.
+  beforeEach(async () => {
+    await resetDispatcherTables(adminDatabaseUrl);
   });
 
   afterEach(async () => {

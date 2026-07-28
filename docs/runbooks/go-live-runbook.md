@@ -89,17 +89,78 @@ docker compose -f infra/production/docker-compose.yml exec postgres-backup ls -l
 
 ### RPO — the honest number
 
-**RPO ≈ the backup interval (hourly by default), NOT sub-5-minute.** A logical `pg_dump`
-is a point-in-time snapshot; worst-case data loss is everything written since the last
-successful dump. There is **no** mechanism in this deployment that achieves a sub-5-minute
-RPO today. (The earlier "RPO < 5 min" target was not supported by manual `pg_dump` and has
-been corrected here.)
+**RPO ≈ the WAL archive lag (seconds to `archive_timeout`, 60s by default), backed by
+hourly base backups.** Two mechanisms run together:
 
-To actually reach a minutes-level RPO you need **continuous WAL archiving / streaming
-replication (PITR)** — archive `pg_wal` segments (or a hot standby) so recovery can replay
-to any point. That is the documented **upgrade path** and is not yet implemented; until it
-is, do not advertise an RPO smaller than the configured backup interval. Tighten
-`BACKUP_INTERVAL_SECONDS` for a smaller RPO at higher I/O cost as an interim measure.
+1. **Base backups** — the `postgres-backup` service takes a scheduled logical `pg_dump`
+   (default hourly, `BACKUP_INTERVAL_SECONDS`) into the `postgres_backups` volume.
+2. **Continuous WAL archiving (PITR)** — `postgres.conf` sets `archive_mode = on` with an
+   `archive_command` that copies every completed WAL segment into the
+   `postgres_wal_archive` volume, plus `archive_timeout = 60s` so an idle database still
+   bounds RPO instead of holding the tail in a partial segment.
+
+A `pg_dump` alone would cap RPO at the dump interval — everything written after the last
+dump is lost. Archiving the WAL alongside it lets recovery replay forward from a base
+backup to any chosen point, which is what brings RPO down from ~1 hour to the archive lag.
+
+Verify archiving is actually healthy (do this as part of go-live checks):
+
+```bash
+docker compose -f infra/production/docker-compose.yml exec -T postgres \
+  psql -U chai_admin -d chai -c \
+  "SELECT archived_count, last_archived_wal, failed_count, last_failed_wal FROM pg_stat_archiver;"
+```
+
+`failed_count` must be 0 and `last_archived_wal` must keep advancing. A rising
+`failed_count` means the archive is broken and **RPO has silently fallen back to the
+dump interval** — treat it as a paging incident, not a warning.
+
+⚠️ The WAL archive volume must be prepared with the right ownership or every archive
+fails with `Permission denied`: a fresh named volume is root-owned while postgres runs as
+uid 70. The `postgres-wal-init` one-shot service handles this and postgres waits on it via
+`depends_on: service_completed_successfully`. Do not remove it.
+
+⚠️ The archive volume is local. A single-node volume protects against container loss, not
+against host loss — ship both `postgres_backups` and `postgres_wal_archive` off-host
+(object storage or a replica) before claiming disaster recovery.
+
+### Point-in-time recovery (PITR)
+
+Restores to an arbitrary timestamp using a base backup plus the archived WAL.
+
+```bash
+# 1. Stop writers so nothing races the restore.
+docker compose -f infra/production/docker-compose.yml stop api client-portal owner-console \
+  realtime-gateway channel-worker inbox-dispatcher outbox-dispatcher automation-worker \
+  analytics-worker payment-worker logistics-worker
+
+# 2. Restore the most recent base backup into a fresh database.
+gunzip -c chai-chai-YYYYMMDD-HHMMSS.sql.gz | psql "$NEW_DATABASE_URL"
+
+# 3. Replay WAL forward to the target time. On the data directory being recovered,
+#    set the recovery target and point restore_command at the archive:
+#      restore_command = 'cp /wal_archive/%f %p'
+#      recovery_target_time = '2026-07-28 14:30:00+00'
+#      recovery_target_action = 'promote'
+#    then create the signal file and start postgres:
+#      touch $PGDATA/recovery.signal
+#
+# 4. Confirm the replay reached the target before letting traffic in.
+psql "$NEW_DATABASE_URL" -c "SELECT pg_is_in_recovery();"   # must be false after promote
+```
+
+Note that step 2 uses the logical dump, which is a *consistent snapshot* rather than a
+physical base backup; replaying WAL on top of a logical restore is only valid if the dump
+was taken with `--snapshot`/matching LSN bookkeeping. For strict PITR, take a **physical**
+base backup instead:
+
+```bash
+docker compose -f infra/production/docker-compose.yml exec -T postgres \
+  pg_basebackup -U chai_admin -D - -Ft -Xnone -z > base-$(date +%F-%H%M).tar.gz
+```
+
+Adopting `pg_basebackup` as the scheduled base backup (rather than `pg_dump`) is the
+remaining step to a textbook PITR setup; the WAL side is in place and verified.
 
 ### On-demand backup (e.g. immediately before a migration)
 

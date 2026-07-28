@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@chai/auth": "workspace:*",
+    "@chai/broker": "workspace:*",
     "@chai/connector-sdk": "workspace:*",
     "@chai/connectors": "workspace:*",
     "@chai/contracts": "workspace:*",

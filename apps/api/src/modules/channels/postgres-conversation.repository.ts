@@ -262,13 +262,18 @@ export class PostgresConversationRepository extends ConversationRepository {
                   aggregateVersion: result.version,
                   eventType: 'message.created',
                   partitionKey: conversationId,
+                  // Payload-by-reference: messageId only, never the message
+                  // text. This payload is published to the Redis outbox stream,
+                  // where it would sit in cleartext outside Postgres RLS and
+                  // outside the retention/PII pipeline. Consumers that need the
+                  // body read chai.message by messageId under tenant RLS. The
+                  // audit block above already follows this discipline.
                   payload: {
                     contentType: 'TEXT',
                     conversationId,
                     direction: 'OUTBOUND',
                     messageId: result.id,
                     senderType: 'HUMAN',
-                    text: input.text,
                   },
                 },
               ],

@@ -1,6 +1,6 @@
 import { createDatabase, withTenantTransaction } from '@chai/database';
 import { inject } from 'vitest';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   acknowledgeInboxEvent,
@@ -35,6 +35,13 @@ describe('inbox dispatcher — crash-window guarantees', () => {
     adminDatabaseUrl = inject('adminDatabaseUrl');
     workerDatabaseUrl = inject('workerDatabaseUrl');
     await seedFoundation(adminDatabaseUrl);
+  });
+
+  // Clean before as well as after: the suite shares one database across test
+  // files, so this file's starting state depends on what ran before it. Same
+  // class of intermittent failure as outbox-dispatcher.integration.test.ts.
+  beforeEach(async () => {
+    await resetDispatcherTables(adminDatabaseUrl);
   });
 
   afterEach(async () => {
