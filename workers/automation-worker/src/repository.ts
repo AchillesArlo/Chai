@@ -27,15 +27,15 @@ interface FollowUpJobRow {
 
 export async function scheduleFollowUp(
   tx: DatabaseTransaction,
-  input: ScheduleFollowUpInput,
-): Promise<FollowUpJob> {
+  input: ScheduleFollowUpInput,): Promise<FollowUpJob> {
   const id = randomUUID();
   const rows = await tx<FollowUpJobRow[]>`
     INSERT INTO chai.follow_up_job
       (id, tenant_id, conversation_id, due_at, max_attempts, payload)
     VALUES
       (${id}, ${input.tenantId}, ${input.conversationId ?? null},
-       ${input.dueAt}, ${input.maxAttempts ?? 3}, ${JSON.stringify(input.payload ?? {})})
+       ${input.dueAt}, ${input.maxAttempts ?? 3},
+       ${tx.json((input.payload ?? {}) as Parameters<typeof tx.json>[0])})
     RETURNING id, tenant_id, conversation_id, due_at, status, attempt,
               max_attempts, payload, last_error, created_at, updated_at
   `;

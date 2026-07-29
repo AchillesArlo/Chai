@@ -5,7 +5,7 @@ import {
   withTenantTransaction,
   type Database,
 } from '@chai/database';
-import { commitBusinessMutation } from '@chai/domain';
+import { commitBusinessMutation, stopPaymentReminders } from '@chai/domain';
 import {
   verifyMockPaymentWebhookSignature,
   type PaymentSession,
@@ -191,17 +191,24 @@ export class PostgresPaymentsRepository extends PaymentsRepository {
         }
 
         // Money is an external effect: the state change, its audit row, and the
-        // payment.updated event must land together or not at all (README
-        // invariant, ADR-007). Before this, applyWebhook ran a bare UPDATE, so
-        // a PAID transition left NO audit trail and emitted NO event -- realtime,
-        // analytics, and automations never learned the payment settled, and
-        // there was no record of who/what moved the money state.
+        // event must land together or not at all (README invariant, ADR-007).
+        // Before this, applyWebhook ran a bare UPDATE, so a PAID transition left
+        // NO audit trail and emitted NO event -- realtime, analytics, and
+        // automations never learned the payment settled, and there was no record
+        // of who/what moved the money state.
+        //
+        // The event name matches the reconciliation worker's
+        // (`payment.<status>`) on purpose: the two paths describe the SAME state
+        // change, so a consumer keyed on `payment.paid` must not silently miss
+        // webhook-driven settlements.
+        let cancelledReminders: string[] = [];
         const next = await commitBusinessMutation(tx, {
           describe: (result) => ({
             audit: {
               action: 'payment.status_changed',
               actorId: API_SERVICE_PRINCIPAL_ID,
               metadata: {
+                cancelledReminders: cancelledReminders.length,
                 currency: result.currency,
                 // externalId is the provider's handle (text), so it travels in
                 // metadata; resource_id is a uuid column.
@@ -218,14 +225,16 @@ export class PostgresPaymentsRepository extends PaymentsRepository {
                 aggregateId: result.id,
                 aggregateType: 'payment',
                 aggregateVersion: 1,
-                eventType: 'payment.updated',
+                eventType: `payment.${result.status.toLowerCase()}`,
                 partitionKey: result.external_id,
                 // Amount travels as integer minor units plus currency code,
                 // never a float (README invariant).
                 payload: {
                   amountMinor: result.amount_cents,
+                  cancelledReminders: cancelledReminders.length,
                   currency: result.currency,
                   externalId: result.external_id,
+                  previousStatus: row.status,
                   status: result.status,
                 },
               },
@@ -240,7 +249,17 @@ export class PostgresPaymentsRepository extends PaymentsRepository {
               WHERE tenant_id = ${tenantId} AND external_id = ${externalId}
               RETURNING *
             `;
-            return updated[0] as PaymentRow;
+            const applied = updated[0] as PaymentRow;
+            // Settled money stops the reminders chasing it, in this same
+            // transaction so the two cannot diverge (07_EVENTS §449).
+            if (applied.status === 'PAID') {
+              cancelledReminders = await stopPaymentReminders(
+                tx,
+                tenantId,
+                applied.external_id,
+              );
+            }
+            return applied;
           },
           tenantId,
         });

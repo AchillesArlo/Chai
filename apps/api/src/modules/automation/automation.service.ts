@@ -60,7 +60,7 @@ export class AutomationService {
           (id, tenant_id, conversation_id, due_at, max_attempts, payload)
         VALUES
           (${id}, ${tenantId}, ${conversationId}, ${dueAt},
-           ${maxAttempts}, ${JSON.stringify(payload)})
+           ${maxAttempts}, ${tx.json(payload as Parameters<typeof tx.json>[0])})
         RETURNING id, status, due_at
       `;
       // INSERT ... RETURNING always yields exactly one row for the inserted id.

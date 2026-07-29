@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
 
 import { createDatabase } from '@chai/database';
@@ -79,7 +81,7 @@ describe('payment webhook commits mutation + audit + event together (REQ-17-009)
       ORDER BY created_at DESC LIMIT 1
     `;
     expect(events).toHaveLength(1);
-    expect(events[0]?.event_type).toBe('payment.updated');
+    expect(events[0]?.event_type).toBe('payment.paid');
 
     const raw0 = events[0]?.payload;
     const payload = (typeof raw0 === 'string' ? JSON.parse(raw0) : raw0) as Record<
@@ -115,5 +117,82 @@ describe('payment webhook commits mutation + audit + event together (REQ-17-009)
     `;
     expect(events[0]?.count).toBe(1);
   });
+
+  /**
+   * REQ-17-063 (CRITICAL, was HILANG): 07_EVENTS §449 / 02_SYSTEM §233 require a
+   * paid payment to stop the reminders chasing it EXACTLY ONCE. Nothing consumed
+   * the paid event before, so reminders kept firing after the customer paid.
+   */
+  it('stops the reminders chasing a payment, exactly once, on PAID', async () => {
+    const created = await repo.createCheckout(API_TENANT_ID, {
+      amount: 75_000,
+      currency: 'IDR',
+      idempotencyKey: `idem-reminder-${Date.now()}`,
+    });
+    const externalId = created.externalId;
+
+    // Two reminders chase this payment; one unrelated reminder must survive, so
+    // the test proves the cancellation is targeted rather than a blanket update.
+    const chasing = [randomUUID(), randomUUID()];
+    const unrelated = randomUUID();
+    for (const id of chasing) {
+      await admin`
+        INSERT INTO chai.follow_up_job (id, tenant_id, due_at, payload)
+        VALUES (${id}, ${API_TENANT_ID}, now() + interval '1 hour',
+                ${admin.json({ paymentExternalId: externalId })})
+      `;
+    }
+    await admin`
+      INSERT INTO chai.follow_up_job (id, tenant_id, due_at, payload)
+      VALUES (${unrelated}, ${API_TENANT_ID}, now() + interval '1 hour',
+              ${admin.json({ paymentExternalId: 'pay_someone_else' })})
+    `;
+
+    const raw = new TextEncoder().encode(
+      JSON.stringify({ externalId, status: 'PAID', tenantId: API_TENANT_ID }),
+    );
+    await repo.applyWebhook(raw, signMockPaymentWebhook(raw));
+
+    const cancelled = await admin<{ id: string; status: string }[]>`
+      SELECT id, status FROM chai.follow_up_job
+      WHERE tenant_id = ${API_TENANT_ID} AND id IN ${admin(chasing)}
+    `;
+    expect(cancelled.map((r) => r.status).sort()).toEqual(['CANCELLED', 'CANCELLED']);
+
+    const survivor = await admin<{ status: string }[]>`
+      SELECT status FROM chai.follow_up_job
+      WHERE tenant_id = ${API_TENANT_ID} AND id = ${unrelated}
+    `;
+    expect(survivor[0]?.status).toBe('PENDING');
+
+    // Replay: the transition machine returns IGNORE, so nothing runs twice and
+    // the reminders stay exactly as the first settlement left them.
+    await repo.applyWebhook(raw, signMockPaymentWebhook(raw));
+    const settled = await admin<{ id: string }[]>`
+      SELECT id FROM chai.payment
+      WHERE tenant_id = ${API_TENANT_ID} AND external_id = ${externalId} LIMIT 1
+    `;
+    // Counted via resource_id (a uuid column) rather than a metadata key:
+    // audit_log.metadata is still written double-encoded system-wide, so
+    // `metadata ->> 'key'` is NULL for every row (see 0071's note).
+    const auditCount = await admin<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM chai.audit_log
+      WHERE tenant_id = ${API_TENANT_ID}
+        AND action = 'payment.status_changed'
+        AND resource_id = ${String(settled[0]?.id)}
+    `;
+    expect(auditCount[0]?.count).toBe(1);
+
+    await admin`
+      DELETE FROM chai.follow_up_job
+      WHERE tenant_id = ${API_TENANT_ID}
+        AND id = ANY(${[...chasing, unrelated]}::uuid[])
+    `;
+  });
 });
+
+
+
+
+
 

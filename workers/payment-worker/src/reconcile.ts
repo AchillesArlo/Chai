@@ -8,6 +8,7 @@ import {
   commitBusinessMutation,
   decidePaymentTransition,
   isTerminalPaymentStatus,
+  stopPaymentReminders,
   type PaymentStatus,
 } from '@chai/domain';
 
@@ -196,12 +197,16 @@ async function applyReconciliation(
   });
   if (decision.kind !== 'APPLY') return false;
 
+  // Only an APPLY reaches the cancellation, so a redelivered or stale provider
+  // report cannot stop reminders twice (07_EVENTS §449).
+  let cancelledReminders: string[] = [];
   await commitBusinessMutation(transaction, {
     describe: (result) => ({
       audit: {
         action: 'payment.reconcile',
         actorId: tenant.principalId,
         metadata: {
+          cancelledReminders: cancelledReminders.length,
           externalId: result.external_id,
           previousStatus: row.status,
           status: result.status,
@@ -219,6 +224,7 @@ async function applyReconciliation(
           partitionKey: result.external_id,
           payload: {
             amountCents: result.amount_cents,
+            cancelledReminders: cancelledReminders.length,
             currency: result.currency,
             externalId: result.external_id,
             previousStatus: row.status,
@@ -236,7 +242,15 @@ async function applyReconciliation(
         WHERE id = ${row.id}
         RETURNING id, external_id, status, status_event_at, amount_cents, currency
       `;
-      return updated[0] as LockedPaymentRow;
+      const applied = updated[0] as LockedPaymentRow;
+      if (applied.status === 'PAID') {
+        cancelledReminders = await stopPaymentReminders(
+          transaction,
+          tenant.tenantId,
+          applied.external_id,
+        );
+      }
+      return applied;
     },
     tenantId: tenant.tenantId,
   });
