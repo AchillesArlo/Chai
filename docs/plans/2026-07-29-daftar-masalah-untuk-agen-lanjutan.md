@@ -65,7 +65,7 @@ Ini bukan preferensi gaya. Melanggarnya adalah pekerjaan yang harus dibuang.
    boleh naik. Baseline sekarang: integrasi api 121.
 5. **Jangan pernah menyunting migrasi yang sudah ada.** Semuanya dipin checksum di
    ledger `0048_schema_migration_ledger.sql`. Migrasi baru mulai dari nomor bebas
-   berikutnya, yaitu **0072** (terakhir dipakai: `0071_follow_up_job_cancelled.sql`).
+   berikutnya, yaitu **0083** (terakhir dipakai: `0082_jsonb_repair_effective.sql`).
 6. **Jangan melonggarkan guard atau invarian.** RLS wajib `ENABLE` + `FORCE`, role
    runtime `NOBYPASSRLS`, urutan guard Audience → Authorization → Entitlement.
 7. **Jangan menghapus repositori in-memory.** Suite e2e bergantung padanya.
@@ -166,10 +166,13 @@ pnpm --filter @chai/database exec tsx src/seed-website-test-accounts.ts
 
 ## Masalah
 
-### MASALAH-01 — jsonb double-encode sistemik (P0, bukan hanya kosmetik)
+### MASALAH-01 — jsonb double-encode sistemik (SELESAI)
 
-**Status:** terkonfirmasi empiris, belum diperbaiki. Menunggu keputusan karena
-blast radius-nya lebar.
+**Status: SELESAI 2026-07-29.** 14 dari 16 berkas diperbaiki ke `tx.json(...)`;
+2 diverifikasi bukan penulis jsonb (body SSE dan JSON Schema ke disk). Backfill
+efektif ada di migrasi `0082_jsonb_repair_effective.sql`, setelah 0071–0081
+terbukti no-op senyap. Uraian di bawah tetap disimpan karena memuat pelajaran
+yang masih berlaku untuk masalah lain.
 
 **Bukti.** Pola `${JSON.stringify(...)}` untuk kolom jsonb menyimpan string
 skalar. Dibuktikan dengan query diagnostik: `jsonb_typeof(payload)` = `'string'`,
@@ -230,11 +233,27 @@ penulis dan pembacanya harus diperbaiki **berpasangan**, per tabel, bukan sekali
 
 **Definisi selesai:**
 - Untuk setiap tabel yang diperbaiki: penulis memakai `sql.json`, semua pembacanya
-  disesuaikan, dan ada migrasi baru (mulai **0072**) yang membetulkan baris lama
+  disesuaikan, dan ada migrasi baru (mulai **0083**) yang membetulkan baris lama
   dengan `UPDATE ... SET kolom = (kolom #>> '{}')::jsonb WHERE jsonb_typeof(kolom) = 'string'`.
-  Contoh yang sudah ada dan terbukti jalan: `0071_follow_up_job_cancelled.sql`.
+
+  **PERINGATAN PENTING — jangan tiru pola migrasi 0071–0081.** Kesepuluh migrasi itu
+  plus 0071 melakukan `SET ROLE chai_migration_owner` lalu `UPDATE` biasa, dan
+  semuanya **no-op senyap** pada database yang berisi data. Sebabnya dua, keduanya
+  sudah diverifikasi empiris terhadap PostgreSQL 17 nyata: (1) seluruh tabel
+  sasaran ber-RLS `FORCE`, dan `FORCE` mencabut kekebalan owner, sementara
+  migrasi tidak menyetel konteks tenant sehingga `chai.current_tenant_id()`
+  bernilai NULL dan policy tidak mencocokkan apa pun — nol baris, tanpa error;
+  (2) `chai.audit_entry` diblokir lagi oleh trigger `audit_entry_no_update`.
+  Cacat itu lolos justru karena testcontainer selalu kosong.
+
+  Pola yang **benar** ada di `0082_jsonb_repair_effective.sql`: jangan `SET ROLE`,
+  jalan sebagai role penghubung (migrasi memang sudah mensyaratkan superuser sejak
+  `0051`), sertakan guard yang **RAISE** bila role tidak bisa bypass RLS, dan
+  nonaktifkan trigger append-only hanya selama transaksi. Tiru berkas itu.
 - Ada tes integrasi yang menegaskan `jsonb_typeof(kolom) = 'object'` dan
-  `kolom ->> 'kunci'` mengembalikan nilai, bukan `NULL`.
+  `kolom ->> 'kunci'` mengembalikan nilai, bukan `NULL`. Acuan:
+  `packages/database/test/jsonb-repair.integration.test.ts` — tes itu **mengisi
+  baris rusak lebih dulu**, sebab database kosong tidak bisa membuktikan apa pun.
 - Seluruh gerbang di tabel [Keadaan sekarang](#keadaan-sekarang-terverifikasi)
   tetap exit 0 dan jumlah tes tidak turun.
 
@@ -448,3 +467,4 @@ lalu mengubah kelasnya berdasarkan keluaran nyata.
   + 16 owner-console.
 - `Omnichannel_AI_Platform_Engineering_Blueprint_v1.2/` — sumber kebenaran spesifikasi.
 - `README.md` bagian "Invarian" — invarian yang pelanggarannya adalah bug rilis.
+

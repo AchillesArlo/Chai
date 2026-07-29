@@ -100,9 +100,9 @@ export class PostgresAuditImmutabilityRepository extends AuditImmutabilityReposi
             ${id}, ${entry.tenantId}, ${entry.eventType}, ${entry.actorType},
             ${entry.actorId}, ${entry.resourceType}, ${entry.resourceId},
             ${entry.action},
-            ${entry.previousState === null ? null : JSON.stringify(entry.previousState)}::jsonb,
-            ${entry.newState === null ? null : JSON.stringify(entry.newState)}::jsonb,
-            ${JSON.stringify(entry.metadata)}::jsonb,
+            ${entry.previousState === null ? null : tx.json(entry.previousState as Parameters<typeof tx.json>[0])}::jsonb,
+            ${entry.newState === null ? null : tx.json(entry.newState as Parameters<typeof tx.json>[0])}::jsonb,
+            ${tx.json(entry.metadata as Parameters<typeof tx.json>[0])}::jsonb,
             ${entry.ipAddress}, ${entry.userAgent}, ${entry.correlationId},
             ${hash}, ${previousHash}, ${createdAt}::timestamptz
           )

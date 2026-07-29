@@ -142,7 +142,7 @@ function toWebhookRecord(row: WebhookRow): WebhookSubscriptionRecord {
     tenantId: row.tenant_id,
     url: row.url,
     description: row.description,
-    events: (row.events as string[]) ?? [],
+    events: parseJson<string[]>(row.events) ?? [],
     signingSecret: row.signing_secret,
     status: row.status,
     createdAt: row.created_at.toISOString(),
@@ -159,7 +159,7 @@ function toListingRecord(row: ListingRow): MarketplaceListingRecord {
     category: row.category,
     iconUrl: row.icon_url,
     documentationUrl: row.documentation_url,
-    configSchema: row.config_schema,
+    configSchema: parseJson(row.config_schema),
     version: row.version,
     published: row.published,
     createdAt: row.created_at.toISOString(),
@@ -172,11 +172,16 @@ function toInstallationRecord(row: InstallationRow): MarketplaceInstallationReco
     id: row.id,
     tenantId: row.tenant_id,
     listingId: row.listing_id,
-    config: row.config,
+    config: parseJson(row.config),
     status: row.status,
     installedAt: row.installed_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };
+}
+
+/** Decode a jsonb column that this driver returns as a raw JSON string. */
+function parseJson<T>(value: unknown): T {
+  return typeof value === 'string' ? (JSON.parse(value) as T) : (value as T);
 }
 
 @Injectable()
@@ -395,7 +400,7 @@ export class PostgresMarketplaceRepository extends MarketplaceRepository {
     return withTenantTransaction(this.database, { tenantId, principalId: SERVICE_PRINCIPAL_ID }, async (tx) => {
       const rows = (await tx`
         INSERT INTO chai.webhook_subscription (id, tenant_id, url, description, events, signing_secret)
-        VALUES (${id}::uuid, ${tenantId}::uuid, ${input.url}, ${input.description ?? null}, ${JSON.stringify(input.events ?? [])}::jsonb, ${signingSecret})
+        VALUES (${id}::uuid, ${tenantId}::uuid, ${input.url}, ${input.description ?? null}, ${tx.json((input.events ?? []) as Parameters<typeof tx.json>[0])}::jsonb, ${signingSecret})
         RETURNING id, tenant_id, url, description, events, signing_secret, status, created_at, updated_at
       `) as unknown as WebhookRow[];
       const row = rows[0];
@@ -414,7 +419,7 @@ export class PostgresMarketplaceRepository extends MarketplaceRepository {
         UPDATE chai.webhook_subscription
         SET url = COALESCE(${input.url ?? null}, url),
             description = COALESCE(${input.description ?? null}, description),
-            events = COALESCE(${input.events ? JSON.stringify(input.events) : null}::jsonb, events),
+            events = COALESCE(${input.events ? tx.json(input.events as Parameters<typeof tx.json>[0]) : null}::jsonb, events),
             status = COALESCE(${input.status ?? null}, status),
             updated_at = now()
         WHERE tenant_id = ${tenantId}::uuid AND id = ${id}::uuid
@@ -472,7 +477,7 @@ export class PostgresMarketplaceRepository extends MarketplaceRepository {
     const id = randomUUID();
     const rows = (await this.database`
       INSERT INTO chai.marketplace_listing (id, provider_id, name, description, category, icon_url, documentation_url, config_schema, version)
-      VALUES (${id}::uuid, ${input.providerId}, ${input.name}, ${input.description}, ${input.category ?? 'connector'}, ${input.iconUrl ?? null}, ${input.documentationUrl ?? null}, ${JSON.stringify(input.configSchema ?? {})}::jsonb, ${input.version ?? '1.0.0'})
+      VALUES (${id}::uuid, ${input.providerId}, ${input.name}, ${input.description}, ${input.category ?? 'connector'}, ${input.iconUrl ?? null}, ${input.documentationUrl ?? null}, ${this.database.json((input.configSchema ?? {}) as Parameters<typeof this.database.json>[0])}::jsonb, ${input.version ?? '1.0.0'})
       RETURNING id, provider_id, name, description, category, icon_url, documentation_url, config_schema, version, published, created_at, updated_at
     `) as unknown as ListingRow[];
     const row = rows[0];
@@ -533,7 +538,7 @@ export class PostgresMarketplaceRepository extends MarketplaceRepository {
     return withTenantTransaction(this.database, { tenantId, principalId: SERVICE_PRINCIPAL_ID }, async (tx) => {
       const rows = (await tx`
         INSERT INTO chai.marketplace_installation (id, tenant_id, listing_id, config)
-        VALUES (${id}::uuid, ${tenantId}::uuid, ${listingId}::uuid, ${JSON.stringify(config ?? {})}::jsonb)
+        VALUES (${id}::uuid, ${tenantId}::uuid, ${listingId}::uuid, ${tx.json((config ?? {}) as Parameters<typeof tx.json>[0])}::jsonb)
         RETURNING id, tenant_id, listing_id, config, status, installed_at, updated_at
       `) as unknown as InstallationRow[];
       const row = rows[0];
@@ -550,7 +555,7 @@ export class PostgresMarketplaceRepository extends MarketplaceRepository {
     return withTenantTransaction(this.database, { tenantId, principalId: SERVICE_PRINCIPAL_ID }, async (tx) => {
       const rows = (await tx`
         UPDATE chai.marketplace_installation
-        SET config = COALESCE(${input.config ? JSON.stringify(input.config) : null}::jsonb, config),
+        SET config = COALESCE(${input.config ? tx.json(input.config as Parameters<typeof tx.json>[0]) : null}::jsonb, config),
             status = COALESCE(${input.status ?? null}, status),
             updated_at = now()
         WHERE tenant_id = ${tenantId}::uuid AND listing_id = ${listingId}::uuid

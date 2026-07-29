@@ -36,12 +36,17 @@ function toRecord(row: FlowVersionRow): FlowVersionRecord {
     id: row.id,
     flowId: row.flow_id,
     version: row.version,
-    definition: row.definition as FlowDefinition,
+    definition: parseJson<FlowDefinition>(row.definition),
     changeLog: row.change_log,
     publishedAt: row.published_at ? row.published_at.toISOString() : null,
     publishedBy: row.published_by,
     createdAt: row.created_at.toISOString(),
   };
+}
+
+/** Decode a jsonb column that this driver returns as a raw JSON string. */
+function parseJson<T>(value: unknown): T {
+  return typeof value === 'string' ? (JSON.parse(value) as T) : (value as T);
 }
 
 /** Snapshot the current definition as a new unpublished version row. */
@@ -62,7 +67,7 @@ export async function createVersion(
         (SELECT MAX(version) FROM chai.automation_flow_version WHERE flow_id = ${flowId}::uuid),
         0
       ) + 1,
-      ${JSON.stringify(definition)}::jsonb,
+      ${transaction.json(definition as unknown as Parameters<typeof transaction.json>[0])}::jsonb,
       ${changeLog},
       now()
     RETURNING id, flow_id, version, definition, change_log, published_at, published_by, created_at
@@ -90,7 +95,7 @@ export async function publishVersion(
 
   await transaction`
     UPDATE chai.automation_flow
-      SET status = 'ACTIVE', version = ${version}, definition = ${JSON.stringify(row.definition)}::jsonb, updated_at = now()
+      SET status = 'ACTIVE', version = ${version}, definition = ${transaction.json(parseJson(row.definition) as Parameters<typeof transaction.json>[0])}::jsonb, updated_at = now()
       WHERE id = ${flowId}::uuid
   `;
 
@@ -109,11 +114,11 @@ export async function rollbackVersion(
   `;
   const row = rows[0];
   if (!row) throw new Error('rollback target version not found');
-  const definition = row.definition as FlowDefinition;
+  const definition = parseJson<FlowDefinition>(row.definition);
 
   await transaction`
     UPDATE chai.automation_flow
-      SET status = 'DRAFT', definition = ${JSON.stringify(definition)}::jsonb, updated_at = now()
+      SET status = 'DRAFT', definition = ${transaction.json(definition as unknown as Parameters<typeof transaction.json>[0])}::jsonb, updated_at = now()
       WHERE id = ${flowId}::uuid
   `;
 

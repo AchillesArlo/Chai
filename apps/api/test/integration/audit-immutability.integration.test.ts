@@ -117,4 +117,45 @@ describe('API Postgres audit-immutability repository (D1)', () => {
     const stillThere = await repo.getEntry(API_TENANT_ID, entry.id);
     expect(stillThere?.id).toBe(entry.id);
   });
+
+  it('stores previousState, newState, and metadata as real jsonb objects without breaking the hash chain (MASALAH-01)', async () => {
+    const repo = new PostgresAuditImmutabilityRepository(runtime);
+
+    const first = await repo.createEntry({
+      ...base,
+      eventType: 'jsonb.probe.created',
+      metadata: { source: 'integration-test', tags: ['a', 'b'] },
+      newState: { nested: { count: 1 }, status: 'draft' },
+      resourceId: 'jsonb-probe-1',
+      resourceType: 'probe',
+      tenantId: API_TENANT_ID,
+    });
+    const second = await repo.createEntry({
+      ...base,
+      action: 'update',
+      eventType: 'jsonb.probe.updated',
+      metadata: { source: 'integration-test', tags: ['a', 'b', 'c'] },
+      newState: { nested: { count: 2 }, status: 'published' },
+      previousState: { nested: { count: 1 }, status: 'draft' },
+      resourceId: 'jsonb-probe-1',
+      resourceType: 'probe',
+      tenantId: API_TENANT_ID,
+    });
+    expect(second.previousHash).toBe(first.hash);
+
+    // A double-encoded write reads back as jsonb_typeof = 'string' and every
+    // key lookup returns NULL: this is the regression 0080 repairs.
+    const shape = await admin<{ typeof: string; val: string | null }[]>`
+      SELECT jsonb_typeof(new_state) AS typeof, new_state -> 'nested' ->> 'count' AS val
+      FROM chai.audit_entry WHERE id = ${first.id}::uuid
+    `;
+    expect(shape[0]?.typeof).toBe('object');
+    expect(shape[0]?.val).toBe('1');
+
+    // The hash chain must still verify: the fix must not perturb computeHash's
+    // canonicalization of the very fields whose on-disk encoding changed.
+    const check = await repo.verifyChain(API_TENANT_ID, 'auditor-jsonb-probe');
+    expect(check.status).toBe('passed');
+    expect(check.brokenChains).toBe(0);
+  });
 });

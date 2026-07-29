@@ -80,4 +80,26 @@ describe('API Postgres template repository (D1)', () => {
     expect(cross.some((row) => row.id === mine.id)).toBe(false);
     expect(await repo.getTemplate(API_TENANT_B_ID, mine.id)).toBeNull();
   });
+
+  it('stores variables as a real jsonb array, not a double-encoded string (MASALAH-01)', async () => {
+    const repo = new PostgresTemplateRepository(runtime);
+    const created = await repo.createTemplate(API_TENANT_ID, {
+      body: 'Hi {{name}}, order {{orderId}}',
+      category: 'UTILITY',
+      language: 'id',
+      name: 'jsonb-probe-template',
+      providerRef: null,
+      status: 'APPROVED',
+      variables: ['name', 'orderId'],
+    });
+
+    // A double-encoded write reads back as jsonb_typeof = 'string' and every
+    // array element access fails: this is the regression 0079 repairs.
+    const shape = await admin<{ typeof: string; second: string | null }[]>`
+      SELECT jsonb_typeof(variables) AS typeof, variables ->> 1 AS second
+      FROM chai.message_template WHERE id = ${created.id}::uuid
+    `;
+    expect(shape[0]?.typeof).toBe('array');
+    expect(shape[0]?.second).toBe('orderId');
+  });
 });

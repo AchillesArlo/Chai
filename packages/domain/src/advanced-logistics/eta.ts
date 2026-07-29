@@ -128,8 +128,8 @@ export async function persistEtaPrediction(
     VALUES
       (${id}, ${tenantId}, ${input.shipmentId},
        ${predictedDate ? predictedDate.toISOString().slice(0, 10) : null},
-       ${confidence}, ${JSON.stringify(factors)}::jsonb)
-    RETURNING * FROM chai.eta_prediction
+       ${confidence}, ${tx.json(factors as Parameters<typeof tx.json>[0])}::jsonb)
+    RETURNING *
   `;
   const row = rows[0];
   if (!row) throw new Error('eta insert returned no row');

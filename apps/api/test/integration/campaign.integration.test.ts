@@ -86,4 +86,42 @@ describe('API Postgres campaign repository (D1)', () => {
     expect(cross.some((row) => row.id === mine.id)).toBe(false);
     expect(await repo.getCampaign(API_TENANT_B_ID, mine.id)).toBeNull();
   });
+
+  it('stores targetSegment and metrics as real jsonb objects, not a double-encoded string (MASALAH-01)', async () => {
+    const repo = new PostgresCampaignRepository(runtime);
+    const created = await repo.createCampaign(API_TENANT_ID, {
+      channel: 'whatsapp',
+      messageTemplateId: null,
+      name: 'Jsonb Probe Campaign',
+      scheduledAt: null,
+      status: 'DRAFT',
+      targetSegment: { region: 'ID', tier: 'vip' },
+      type: 'BROADCAST',
+    });
+    const updated = await repo.updateCampaign(API_TENANT_ID, created.id, {
+      metrics: { delivered: 3, failed: 0, read: 1, sent: 4 },
+      targetSegment: { region: 'SG', tier: 'vip' },
+    });
+    expect(updated.metrics).toEqual({ delivered: 3, failed: 0, read: 1, sent: 4 });
+
+    // A double-encoded write reads back as jsonb_typeof = 'string' and every
+    // key lookup returns NULL: this is the regression 0081 repairs.
+    const shape = await admin<{
+      segment_type: string;
+      segment_val: string | null;
+      metrics_type: string;
+      metrics_val: string | null;
+    }[]>`
+      SELECT
+        jsonb_typeof(target_segment) AS segment_type,
+        target_segment ->> 'region' AS segment_val,
+        jsonb_typeof(metrics) AS metrics_type,
+        metrics ->> 'sent' AS metrics_val
+      FROM chai.campaign WHERE id = ${created.id}::uuid
+    `;
+    expect(shape[0]?.segment_type).toBe('object');
+    expect(shape[0]?.segment_val).toBe('SG');
+    expect(shape[0]?.metrics_type).toBe('object');
+    expect(shape[0]?.metrics_val).toBe('4');
+  });
 });

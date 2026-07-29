@@ -90,4 +90,24 @@ describe('PostgresContactSegmentRepository (D2 persistence)', () => {
     await repo.deleteSegment(API_TENANT_ID, ownSegment.id);
     await repo.deleteSegment(API_TENANT_B_ID, foreignSegment.id);
   });
+
+  it('stores filterRules as a real jsonb object, not a double-encoded string (MASALAH-01)', async () => {
+    const created = await repo.createSegment(API_TENANT_ID, {
+      description: null,
+      filterRules: { minSpend: 500_000 },
+      name: 'Jsonb probe segment',
+      tenantId: API_TENANT_ID,
+    });
+
+    // A double-encoded write reads back as jsonb_typeof = 'string' and
+    // `->> 'key'` = NULL for every key: this is the regression 0076 repairs.
+    const shape = await admin<{ typeof: string; val: string | null }[]>`
+      SELECT jsonb_typeof(filter_rules) AS typeof, filter_rules ->> 'minSpend' AS val
+      FROM chai.contact_segment WHERE id = ${created.id}::uuid
+    `;
+    expect(shape[0]?.typeof).toBe('object');
+    expect(shape[0]?.val).toBe('500000');
+
+    await repo.deleteSegment(API_TENANT_ID, created.id);
+  });
 });

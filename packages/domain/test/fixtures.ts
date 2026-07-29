@@ -258,7 +258,7 @@ export async function seedOutboxEvent(
         ${event.aggregateId},
         ${event.aggregateVersion ?? 1},
         ${event.partitionKey ?? event.aggregateId},
-        ${JSON.stringify(event.payload ?? { })},
+        ${admin.json((event.payload ?? { }) as Parameters<typeof admin.json>[0])},
         ${event.status ?? 'PENDING'},
         ${event.attempts ?? 0},
         ${event.availableAt ?? new Date()},

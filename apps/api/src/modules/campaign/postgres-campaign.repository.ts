@@ -100,7 +100,7 @@ export class PostgresCampaignRepository extends CampaignRepository {
         ) VALUES (
           ${id}, ${tenantId}, ${campaign.name}, ${campaign.type},
           ${campaign.status}, ${campaign.channel}, ${campaign.messageTemplateId},
-          ${campaign.targetSegment === null ? null : JSON.stringify(campaign.targetSegment)}::jsonb,
+          ${campaign.targetSegment === null ? null : tx.json(campaign.targetSegment as Parameters<typeof tx.json>[0])}::jsonb,
           ${campaign.scheduledAt}::timestamptz
         )
         RETURNING *
@@ -125,11 +125,11 @@ export class PostgresCampaignRepository extends CampaignRepository {
           status = ${merged.status},
           channel = ${merged.channel},
           message_template_id = ${merged.messageTemplateId},
-          target_segment = ${merged.targetSegment === null ? null : JSON.stringify(merged.targetSegment)}::jsonb,
+          target_segment = ${merged.targetSegment === null ? null : tx.json(merged.targetSegment as Parameters<typeof tx.json>[0])}::jsonb,
           scheduled_at = ${merged.scheduledAt}::timestamptz,
           started_at = ${merged.startedAt}::timestamptz,
           completed_at = ${merged.completedAt}::timestamptz,
-          metrics = ${JSON.stringify(merged.metrics)}::jsonb,
+          metrics = ${tx.json(merged.metrics as unknown as Parameters<typeof tx.json>[0])}::jsonb,
           updated_at = now()
         WHERE tenant_id = ${tenantId} AND id = ${id}
         RETURNING *

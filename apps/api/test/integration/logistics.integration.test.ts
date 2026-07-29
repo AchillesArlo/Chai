@@ -104,4 +104,29 @@ describe('API Postgres logistics repository (S2-1)', () => {
     });
     expect(second.events.length).toBe(first.events.length);
   });
+
+  it('stores shipment events as a real jsonb array, not a double-encoded string (MASALAH-01)', async () => {
+    const logistics = new PostgresLogisticsRepository(runtime);
+    const trackingNumber = `TRK-S2-1-JSONB-${Date.now()}`;
+
+    await logistics.link(API_TENANT_ID, {
+      carrier: 'mock-shipping',
+      trackingNumber,
+    });
+    await logistics.appendEvent(API_TENANT_ID, trackingNumber, {
+      at: new Date(),
+      code: 'PICKED_UP',
+      description: 'Package picked up at origin',
+    });
+
+    // A double-encoded write reads back as jsonb_typeof = 'string' and every
+    // array element access fails: this is the regression 0077 repairs.
+    const shape = await admin<{ typeof: string; val: string | null }[]>`
+      SELECT jsonb_typeof(events) AS typeof, events -> 1 ->> 'code' AS val
+      FROM chai.shipment
+      WHERE tenant_id = ${API_TENANT_ID}::uuid AND tracking_number = ${trackingNumber}
+    `;
+    expect(shape[0]?.typeof).toBe('array');
+    expect(shape[0]?.val).toBe('PICKED_UP');
+  });
 });

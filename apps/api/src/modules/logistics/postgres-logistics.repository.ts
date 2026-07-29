@@ -82,7 +82,7 @@ export class PostgresLogisticsRepository extends LogisticsRepository {
              last_synced_at, contact_id, order_reference)
           VALUES
             (${id}, ${tenantId}, ${input.carrier}, ${input.trackingNumber}, 'LINKED',
-             ${JSON.stringify(events)}::jsonb, ${linkedAt},
+             ${tx.json(events as unknown as Parameters<typeof tx.json>[0])}::jsonb, ${linkedAt},
              ${input.contactId ?? null}, ${input.orderReference ?? null})
         `;
         return {
@@ -255,7 +255,7 @@ export class PostgresLogisticsRepository extends LogisticsRepository {
 
         await tx`
           UPDATE chai.shipment
-          SET events = ${JSON.stringify(events)}::jsonb,
+          SET events = ${tx.json(events as unknown as Parameters<typeof tx.json>[0])}::jsonb,
               status = ${status},
               last_synced_at = now(),
               updated_at = now()

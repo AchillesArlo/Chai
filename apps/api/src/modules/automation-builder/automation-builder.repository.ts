@@ -95,7 +95,7 @@ function toFlowRecord(row: FlowRow): AutomationFlowRecord {
     description: row.description,
     status: row.status,
     version: row.version,
-    definition: row.definition,
+    definition: parseJson(row.definition),
     createdBy: row.created_by,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
@@ -107,11 +107,16 @@ function toSimRecord(row: SimRow): SimulationRecord {
     id: row.id,
     flowId: row.flow_id,
     version: row.version,
-    input: row.input,
-    output: row.output,
+    input: parseJson(row.input),
+    output: parseJson(row.output),
     status: row.status,
     createdAt: row.created_at.toISOString(),
   };
+}
+
+/** Decode a jsonb column that this driver returns as a raw JSON string. */
+function parseJson<T>(value: unknown): T {
+  return typeof value === 'string' ? (JSON.parse(value) as T) : (value as T);
 }
 
 @Injectable()
@@ -262,7 +267,7 @@ export class PostgresAutomationBuilderRepository extends AutomationBuilderReposi
     return withTenantTransaction(this.database, { tenantId, principalId: SERVICE_PRINCIPAL_ID }, async (tx) => {
       const rows = await tx<FlowRow[]>`
         INSERT INTO chai.automation_flow (id, tenant_id, name, description, definition, created_by)
-        VALUES (${id}::uuid, ${tenantId}::uuid, ${input.name}, ${input.description ?? null}, ${JSON.stringify(input.definition ?? { nodes: [], edges: [] })}::jsonb, ${input.createdBy ?? null}::uuid)
+        VALUES (${id}::uuid, ${tenantId}::uuid, ${input.name}, ${input.description ?? null}, ${tx.json((input.definition ?? { nodes: [], edges: [] }) as Parameters<typeof tx.json>[0])}::jsonb, ${input.createdBy ?? null}::uuid)
         RETURNING id, tenant_id, name, description, status, version, definition, created_by, created_at, updated_at
       `;
       const row = rows[0];
@@ -281,7 +286,7 @@ export class PostgresAutomationBuilderRepository extends AutomationBuilderReposi
         UPDATE chai.automation_flow
           SET name = COALESCE(${input.name ?? null}, name),
               description = COALESCE(${input.description ?? null}, description),
-              definition = COALESCE(${input.definition !== undefined ? JSON.stringify(input.definition) : null}::jsonb, definition),
+              definition = COALESCE(${input.definition !== undefined ? tx.json(input.definition as Parameters<typeof tx.json>[0]) : null}::jsonb, definition),
               updated_at = now()
           WHERE tenant_id = ${tenantId}::uuid AND id = ${id}::uuid
           RETURNING id, tenant_id, name, description, status, version, definition, created_by, created_at, updated_at
@@ -303,7 +308,7 @@ export class PostgresAutomationBuilderRepository extends AutomationBuilderReposi
     return withTenantTransaction(this.database, { tenantId, principalId: SERVICE_PRINCIPAL_ID }, async (tx) => {
       const rows = await tx<SimRow[]>`
         INSERT INTO chai.automation_simulation (id, flow_id, version, input, output, status)
-        VALUES (${id}::uuid, ${flowId}::uuid, ${input.version ?? flow.version}, ${JSON.stringify(input.input ?? null)}::jsonb, ${JSON.stringify(input.output ?? null)}::jsonb, ${input.status ?? 'COMPLETED'})
+        VALUES (${id}::uuid, ${flowId}::uuid, ${input.version ?? flow.version}, ${tx.json((input.input ?? null) as Parameters<typeof tx.json>[0])}::jsonb, ${tx.json((input.output ?? null) as Parameters<typeof tx.json>[0])}::jsonb, ${input.status ?? 'COMPLETED'})
         RETURNING id, flow_id, version, input, output, status, created_at
       `;
       const row = rows[0];
@@ -326,7 +331,7 @@ export class PostgresAutomationBuilderRepository extends AutomationBuilderReposi
       const flowRow = flowRows[0];
       if (!flowRow) throw new Error('flow not found');
 
-      const version = await createVersion(tx, flowId, flowRow.definition as never, null);
+      const version = await createVersion(tx, flowId, parseJson(flowRow.definition), null);
       const published = await publishVersion(tx, flowId, version.version, publishedBy);
 
       const updatedRows = await tx<FlowRow[]>`

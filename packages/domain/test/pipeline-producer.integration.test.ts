@@ -313,6 +313,59 @@ describe('business mutation atomicity', () => {
       await database.end();
     }
   });
+
+  it('stores outbox payload and audit metadata as real jsonb objects, not a double-encoded string (MASALAH-01)', async () => {
+    const database = createDatabase(runtimeDatabaseUrl);
+    try {
+      await withTenantTransaction(database, contextA, (tx) =>
+        commitBusinessMutation(tx, {
+          describe: () => ({
+            audit: {
+              action: 'lead.qualified.jsonb-probe',
+              actorId: PRINCIPAL_A,
+              metadata: { auditKey: 'audit-value' },
+              resourceType: 'lead',
+            },
+            events: [
+              {
+                aggregateId: DOMAIN_IDS.tenantA,
+                aggregateType: 'lead',
+                aggregateVersion: 1,
+                eventType: 'lead.qualified.jsonb-probe',
+                payload: { eventKey: 'event-value' },
+              },
+            ],
+          }),
+          mutate: async () => 'ok',
+          tenantId: TENANT_A,
+        }),
+      );
+
+      const shape = await withTenantTransaction(database, contextA, async (tx) => {
+        const outbox = await tx<{ typeof: string; val: string | null }[]>`
+          SELECT jsonb_typeof(payload) AS typeof, payload ->> 'eventKey' AS val
+          FROM chai.outbox_event
+          WHERE event_type = 'lead.qualified.jsonb-probe'
+        `;
+        const audit = await tx<{ typeof: string; val: string | null }[]>`
+          SELECT jsonb_typeof(metadata) AS typeof, metadata ->> 'auditKey' AS val
+          FROM chai.audit_log
+          WHERE action = 'lead.qualified.jsonb-probe'
+        `;
+        return { audit: audit[0], outbox: outbox[0] };
+      });
+
+      // A double-encoded write reads back as jsonb_typeof = 'string' and
+      // `->> 'key'` = NULL for every key: this is the regression 0072 repairs.
+      expect(shape.outbox?.typeof).toBe('object');
+      expect(shape.outbox?.val).toBe('event-value');
+      expect(shape.audit?.typeof).toBe('object');
+      expect(shape.audit?.val).toBe('audit-value');
+    } finally {
+      await database.end();
+    }
+  });
+
 });
 
 describe('persistent idempotency and operation state', () => {

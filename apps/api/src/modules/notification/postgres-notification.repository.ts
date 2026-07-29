@@ -78,7 +78,7 @@ export class PostgresNotificationRepository extends NotificationRepository {
           ${id}, ${tenantId}, ${notification.userId}, ${notification.type},
           ${notification.title}, ${notification.body}, ${notification.channel},
           ${notification.status},
-          ${JSON.stringify(notification.metadata)}::jsonb
+          ${tx.json(notification.metadata as Parameters<typeof tx.json>[0])}::jsonb
         )
         RETURNING *
       `;
@@ -102,7 +102,7 @@ export class PostgresNotificationRepository extends NotificationRepository {
           body = ${merged.body},
           channel = ${merged.channel},
           status = ${merged.status},
-          metadata = ${JSON.stringify(merged.metadata)}::jsonb,
+          metadata = ${tx.json(merged.metadata as Parameters<typeof tx.json>[0])}::jsonb,
           sent_at = ${merged.sentAt},
           read_at = ${merged.readAt},
           updated_at = now()

@@ -73,7 +73,7 @@ export class PostgresTemplateRepository extends TemplateRepository {
         ) VALUES (
           ${id}, ${tenantId}, ${template.name}, ${template.language},
           ${template.category}, ${template.status}, ${template.body},
-          ${JSON.stringify(template.variables)}::jsonb, ${template.providerRef}
+          ${tx.json(template.variables as unknown as Parameters<typeof tx.json>[0])}::jsonb, ${template.providerRef}
         )
         RETURNING *
       `;
@@ -97,7 +97,7 @@ export class PostgresTemplateRepository extends TemplateRepository {
           category = ${merged.category},
           status = ${merged.status},
           body = ${merged.body},
-          variables = ${JSON.stringify(merged.variables)}::jsonb,
+          variables = ${tx.json(merged.variables as unknown as Parameters<typeof tx.json>[0])}::jsonb,
           provider_ref = ${merged.providerRef},
           updated_at = now()
         WHERE tenant_id = ${tenantId} AND id = ${id}

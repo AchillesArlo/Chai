@@ -85,7 +85,7 @@ export class PostgresContactSegmentRepository extends ContactSegmentRepository {
           VALUES
             (${id}::uuid, ${tenantId}::uuid, ${segment.name},
              ${segment.description ?? null},
-             ${JSON.stringify(segment.filterRules ?? {})}::jsonb, 0)
+             ${tx.json((segment.filterRules ?? {}) as Parameters<typeof tx.json>[0])}::jsonb, 0)
           RETURNING id, tenant_id, name, description, filter_rules, member_count,
                     created_at, updated_at
         `;
@@ -125,7 +125,7 @@ export class PostgresContactSegmentRepository extends ContactSegmentRepository {
           UPDATE chai.contact_segment
           SET name = ${merged.name},
               description = ${merged.description ?? null},
-              filter_rules = ${JSON.stringify(merged.filterRules ?? {})}::jsonb,
+              filter_rules = ${tx.json((merged.filterRules ?? {}) as Parameters<typeof tx.json>[0])}::jsonb,
               member_count = ${merged.memberCount},
               updated_at = now()
           WHERE tenant_id = ${tenantId} AND id = ${id}

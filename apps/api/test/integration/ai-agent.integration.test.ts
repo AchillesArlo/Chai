@@ -127,4 +127,64 @@ describe('API Postgres ai-agent repository (D1)', () => {
       (await repo.listToolPolicies(API_TENANT_ID)).some((row) => row.id === policy.id),
     ).toBe(false);
   });
+
+  it('stores businessRules, handoverPolicy, context, and constraints as real jsonb objects (MASALAH-01)', async () => {
+    const repo = new PostgresAIAgentRepository(runtime);
+    const profile = await repo.createProfile(API_TENANT_ID, {
+      businessRules: { maxRetries: 7 },
+      handoverPolicy: { afterAttempts: 2 },
+      language: 'id',
+      name: 'Jsonb Probe Bot',
+      status: 'ACTIVE',
+      tone: null,
+      useCase: 'probe',
+    });
+
+    const conversationId = randomUUID();
+    await admin`
+      INSERT INTO chai.conversation (id, tenant_id, contact_id, channel_account_id)
+      VALUES (${conversationId}, ${API_TENANT_ID}, ${API_CONTACT_ID}, ${API_CHANNEL_ACCOUNT_ID})
+    `;
+    const session = await repo.createSession(API_TENANT_ID, {
+      agentProfileId: profile.id,
+      context: { customerName: 'Budi' },
+      conversationId,
+      status: 'ACTIVE',
+    });
+    const policy = await repo.createToolPolicy(API_TENANT_ID, {
+      agentProfileId: profile.id,
+      allowed: true,
+      constraints: { maxPerMinute: 5 },
+      toolName: 'jsonb-probe-tool',
+    });
+
+    // A double-encoded write reads back as jsonb_typeof = 'string' and
+    // `->> 'key'` = NULL for every key: this is the regression 0073 repairs.
+    const profileShape = await admin<{ rules_type: string; rules_val: string | null; policy_type: string; policy_val: string | null }[]>`
+      SELECT
+        jsonb_typeof(business_rules) AS rules_type,
+        business_rules ->> 'maxRetries' AS rules_val,
+        jsonb_typeof(handover_policy) AS policy_type,
+        handover_policy ->> 'afterAttempts' AS policy_val
+      FROM chai.agent_profile WHERE id = ${profile.id}
+    `;
+    expect(profileShape[0]?.rules_type).toBe('object');
+    expect(profileShape[0]?.rules_val).toBe('7');
+    expect(profileShape[0]?.policy_type).toBe('object');
+    expect(profileShape[0]?.policy_val).toBe('2');
+
+    const sessionShape = await admin<{ typeof: string; val: string | null }[]>`
+      SELECT jsonb_typeof(context) AS typeof, context ->> 'customerName' AS val
+      FROM chai.agent_session WHERE id = ${session.id}
+    `;
+    expect(sessionShape[0]?.typeof).toBe('object');
+    expect(sessionShape[0]?.val).toBe('Budi');
+
+    const policyShape = await admin<{ typeof: string; val: string | null }[]>`
+      SELECT jsonb_typeof(constraints) AS typeof, constraints ->> 'maxPerMinute' AS val
+      FROM chai.tool_policy WHERE id = ${policy.id}
+    `;
+    expect(policyShape[0]?.typeof).toBe('object');
+    expect(policyShape[0]?.val).toBe('5');
+  });
 });

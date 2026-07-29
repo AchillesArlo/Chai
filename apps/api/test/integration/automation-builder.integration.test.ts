@@ -88,4 +88,46 @@ describe('API Postgres automation-builder repository (S4-3)', () => {
     const cross = await repo.getFlow(otherTenant, created.id);
     expect(cross).toBeNull();
   });
+
+  it('stores flow definition, version definition, and simulation input/output as real jsonb objects (MASALAH-01)', async () => {
+    const repo = new PostgresAutomationBuilderRepository(runtime);
+
+    const created = await repo.createFlow(API_TENANT_ID, {
+      name: 'Jsonb probe flow',
+      definition: SAMPLE_DEFINITION,
+      createdBy: API_SERVICE_PRINCIPAL_ID,
+    });
+    const sim = await repo.simulate(API_TENANT_ID, created.id, {
+      input: { text: 'upgrade' },
+      output: { matched: true },
+    });
+    await repo.publish(API_TENANT_ID, created.id, API_SERVICE_PRINCIPAL_ID);
+
+    // A double-encoded write reads back as jsonb_typeof = 'string' and every
+    // key lookup returns NULL: this is the regression 0075 repairs.
+    const flowShape = await admin<{ typeof: string; val: string | null }[]>`
+      SELECT jsonb_typeof(definition) AS typeof, definition -> 'nodes' -> 0 ->> 'id' AS val
+      FROM chai.automation_flow WHERE id = ${created.id}::uuid
+    `;
+    expect(flowShape[0]?.typeof).toBe('object');
+    expect(flowShape[0]?.val).toBe('t1');
+
+    const versionShape = await admin<{ typeof: string; val: string | null }[]>`
+      SELECT jsonb_typeof(definition) AS typeof, definition -> 'nodes' -> 0 ->> 'id' AS val
+      FROM chai.automation_flow_version WHERE flow_id = ${created.id}::uuid AND version = 1
+    `;
+    expect(versionShape[0]?.typeof).toBe('object');
+    expect(versionShape[0]?.val).toBe('t1');
+
+    const simShape = await admin<{ input_type: string; input_val: string | null; output_type: string; output_val: string | null }[]>`
+      SELECT
+        jsonb_typeof(input) AS input_type, input ->> 'text' AS input_val,
+        jsonb_typeof(output) AS output_type, output ->> 'matched' AS output_val
+      FROM chai.automation_simulation WHERE id = ${sim.id}::uuid
+    `;
+    expect(simShape[0]?.input_type).toBe('object');
+    expect(simShape[0]?.input_val).toBe('upgrade');
+    expect(simShape[0]?.output_type).toBe('object');
+    expect(simShape[0]?.output_val).toBe('true');
+  });
 });

@@ -65,7 +65,7 @@ export async function appendOutboxEvent(
       ${input.aggregateId},
       ${Math.max(0, Math.trunc(input.aggregateVersion))}::int,
       ${input.partitionKey ?? input.aggregateId},
-      ${JSON.stringify(input.payload ?? {})}::jsonb,
+      ${transaction.json((input.payload ?? {}) as Parameters<typeof transaction.json>[0])}::jsonb,
       'PENDING',
       ${currentTraceparent()}
     )
@@ -99,7 +99,7 @@ export async function appendAuditEntry(
       ${input.resourceId ?? null},
       ${input.reason ?? null},
       ${input.correlationId ?? randomUUID()},
-      ${JSON.stringify(input.metadata ?? {})}::jsonb
+      ${transaction.json((input.metadata ?? {}) as Parameters<typeof transaction.json>[0])}::jsonb
     )
   `;
   return id;

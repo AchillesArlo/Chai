@@ -98,8 +98,8 @@ export class PostgresAIAgentRepository extends AIAgentRepository {
         ) VALUES (
           ${id}, ${tenantId}, ${profile.name}, ${profile.useCase},
           ${profile.status}, ${profile.tone}, ${profile.language},
-          ${JSON.stringify(profile.businessRules)}::jsonb,
-          ${JSON.stringify(profile.handoverPolicy)}::jsonb
+          ${tx.json(profile.businessRules as Parameters<typeof tx.json>[0])}::jsonb,
+          ${tx.json(profile.handoverPolicy as Parameters<typeof tx.json>[0])}::jsonb
         )
         RETURNING *
       `;
@@ -123,8 +123,8 @@ export class PostgresAIAgentRepository extends AIAgentRepository {
           status = ${merged.status},
           tone = ${merged.tone},
           language = ${merged.language},
-          business_rules = ${JSON.stringify(merged.businessRules)}::jsonb,
-          handover_policy = ${JSON.stringify(merged.handoverPolicy)}::jsonb,
+          business_rules = ${tx.json(merged.businessRules as Parameters<typeof tx.json>[0])}::jsonb,
+          handover_policy = ${tx.json(merged.handoverPolicy as Parameters<typeof tx.json>[0])}::jsonb,
           updated_at = now()
         WHERE tenant_id = ${tenantId} AND id = ${id}
         RETURNING *
@@ -194,7 +194,7 @@ export class PostgresAIAgentRepository extends AIAgentRepository {
         ) VALUES (
           ${id}, ${tenantId}, ${session.agentProfileId},
           ${session.conversationId}, ${session.status},
-          ${JSON.stringify(session.context)}::jsonb
+          ${tx.json(session.context as Parameters<typeof tx.json>[0])}::jsonb
         )
         RETURNING *
       `;
@@ -216,7 +216,7 @@ export class PostgresAIAgentRepository extends AIAgentRepository {
           status = ${merged.status},
           ended_at = ${merged.endedAt},
           messages_count = ${merged.messagesCount},
-          context = ${JSON.stringify(merged.context)}::jsonb,
+          context = ${tx.json(merged.context as Parameters<typeof tx.json>[0])}::jsonb,
           updated_at = now()
         WHERE tenant_id = ${tenantId} AND id = ${id}
         RETURNING *
@@ -254,7 +254,7 @@ export class PostgresAIAgentRepository extends AIAgentRepository {
         ) VALUES (
           ${id}, ${tenantId}, ${policy.agentProfileId ?? null},
           ${toolName}, ${policy.allowed},
-          ${JSON.stringify(policy.constraints)}::jsonb
+          ${tx.json(policy.constraints as Parameters<typeof tx.json>[0])}::jsonb
         )
         RETURNING *
       `;
@@ -276,7 +276,7 @@ export class PostgresAIAgentRepository extends AIAgentRepository {
           agent_profile_id = ${merged.agentProfileId ?? null},
           tool_name = ${merged.toolName ?? ''},
           allowed = ${merged.allowed},
-          constraints = ${JSON.stringify(merged.constraints)}::jsonb,
+          constraints = ${tx.json(merged.constraints as Parameters<typeof tx.json>[0])}::jsonb,
           updated_at = now()
         WHERE tenant_id = ${tenantId} AND id = ${id}
         RETURNING *

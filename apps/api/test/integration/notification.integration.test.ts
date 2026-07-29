@@ -71,4 +71,26 @@ describe('API Postgres notification repository (D1)', () => {
     expect(cross.some((row) => row.id === mine.id)).toBe(false);
     expect(await repo.getNotification(API_TENANT_B_ID, mine.id)).toBeNull();
   });
+
+  it('stores metadata as a real jsonb object, not a double-encoded string (MASALAH-01)', async () => {
+    const repo = new PostgresNotificationRepository(runtime);
+    const created = await repo.createNotification(API_TENANT_ID, {
+      body: 'jsonb probe',
+      channel: 'in_app',
+      metadata: { ticketId: 'probe-1' },
+      status: 'PENDING',
+      title: 'Jsonb Probe',
+      type: 'IN_APP',
+      userId: API_CLIENT_OWNER_ID,
+    });
+
+    // A double-encoded write reads back as jsonb_typeof = 'string' and
+    // `->> 'key'` = NULL for every key: this is the regression 0078 repairs.
+    const shape = await admin<{ typeof: string; val: string | null }[]>`
+      SELECT jsonb_typeof(metadata) AS typeof, metadata ->> 'ticketId' AS val
+      FROM chai.notification WHERE id = ${created.id}::uuid
+    `;
+    expect(shape[0]?.typeof).toBe('object');
+    expect(shape[0]?.val).toBe('probe-1');
+  });
 });

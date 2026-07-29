@@ -198,7 +198,7 @@ async function appendAndCommit(
     mutate: async () => {
       const updated = await transaction<LockedShipmentRow[]>`
         UPDATE chai.shipment
-        SET events = ${JSON.stringify(merged)}::jsonb,
+        SET events = ${transaction.json(merged as unknown as Parameters<typeof transaction.json>[0])}::jsonb,
             status = ${status},
             last_synced_at = now(),
             updated_at = now()

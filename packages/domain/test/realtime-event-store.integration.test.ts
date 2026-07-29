@@ -129,4 +129,27 @@ describe('durable realtime replay window', () => {
       await database.end();
     }
   });
+
+  it('stores the event payload as a real jsonb object, not a double-encoded string (MASALAH-01)', async () => {
+    const database = createDatabase(workerDatabaseUrl);
+    const admin = postgres(adminDatabaseUrl, { max: 1 });
+    try {
+      const store = new PostgresRealtimeEventStore(database, PRINCIPAL_A);
+      await store.append(TENANT_A, event('jsonb-probe', 1));
+
+      const rows = await admin<{ typeof: string; val: string | null }[]>`
+        SELECT jsonb_typeof(payload) AS typeof, payload ->> 'id' AS val
+        FROM chai.realtime_event
+        WHERE event_id = 'jsonb-probe'
+      `;
+
+      // A double-encoded write reads back as jsonb_typeof = 'string' and
+      // `->> 'key'` = NULL for every key: this is the regression 0072 repairs.
+      expect(rows[0]?.typeof).toBe('object');
+      expect(rows[0]?.val).toBe('jsonb-probe');
+    } finally {
+      await admin.end();
+      await database.end();
+    }
+  });
 });

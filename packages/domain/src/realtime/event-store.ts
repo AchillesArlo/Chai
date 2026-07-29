@@ -48,7 +48,7 @@ export class PostgresRealtimeEventStore {
           ${event.event},
           ${event.aggregateId ?? null},
           ${event.version ?? null},
-          ${JSON.stringify(event.data ?? {})}::jsonb
+          ${tx.json((event.data ?? {}) as Parameters<typeof tx.json>[0])}::jsonb
         )
         ON CONFLICT (tenant_id, event_id) DO NOTHING
       `;

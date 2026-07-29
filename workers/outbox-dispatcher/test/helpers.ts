@@ -45,7 +45,7 @@ export async function seedOutboxEvent(
       VALUES (
         ${id}, ${WORKER_IDS.tenantA}, ${eventType}, 1,
         'message', ${WORKER_IDS.aggregate}, 1, ${WORKER_IDS.aggregate},
-        ${JSON.stringify({ id, eventType })}::jsonb
+        ${admin.json({ id, eventType })}::jsonb
       )
     `;
   } finally {
