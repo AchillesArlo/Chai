@@ -93,7 +93,7 @@ Select-String -Path $f -Pattern '^\| REQ-17-\d{3} ' |
 | REQ-17-055 | Target SLO §14 | TIDAK-TERVERIFIKASI | - |
 | REQ-17-056 | Kontrol wajib (retry/Retry-After, circuit breaker, uncertain-state, gap-detection, daily reconcile, kill switch) | SEBAGIAN | MEDIUM |
 | REQ-17-057 | Cakupan tes minimum §16 | SEBAGIAN | MEDIUM |
-| REQ-17-058 | PAY-01 Isolasi kredensial/transaksi tenant (RLS/secret/queue/cache/audit) | TERPENUHI | - |
+| REQ-17-058 | PAY-01 Isolasi kredensial/transaksi tenant (RLS/secret/queue/cache/audit) | SEBAGIAN | HIGH |
 | REQ-17-059 | PAY-02 Amount/currency/purpose link dari data bisnis tepercaya + konfirmasi | SEBAGIAN | HIGH |
 | REQ-17-060 | PAY-03 Status hanya dari bukti provider; redirect/screenshot/klaim tak cukup | TERPENUHI | - |
 | REQ-17-061 | PAY-04 Webhook duplikat/replay/out-of-order tak duplikasi/mundurkan payment | TERPENUHI | - |
@@ -666,6 +666,275 @@ Blok ditulis lengkap untuk semua non-`TERPENUHI` (wajib punya "Yang kurang") dan
 
 ---
 
+## Blok bukti berdiri-sendiri — 23 temuan (substansiasi baris tabel)
+
+Blok berikut memberi bukti `path:baris` untuk 23 REQ yang sebelumnya hanya berupa baris tabel Ringkasan plus rujukan dalam blok gabungan (`REQ-a / REQ-b`), butir "TERPENUHI ringkas", atau daftar TIDAK-TERVERIFIKASI. Semua diverifikasi ulang terhadap kode terkini (termasuk `applyWebhook` yang kini memakai `commitBusinessMutation` + `stopPaymentReminders`). Kelas dipertahankan sama dengan baris tabel; satu koreksi (REQ-17-058) dijelaskan di bloknya.
+
+### REQ-17-003 — Card/CVV/PIN/OTP/kredensial bank tak pernah masuk platform · TERPENUHI · -
+
+**Persyaratan** (`17 §2.3`): "MVP payment uses provider-hosted checkout/payment links. Card number, CVV, PIN, OTP, and banking credentials never enter platform chat, forms, logs, or storage."
+
+**Kondisi nyata**: Satu-satunya body pembuatan pembayaran, `CreateCheckoutBody`, hanya menerima `amount`/`currency`/`idempotencyKey`. `ValidationPipe` global (`whitelist:true` + `forbidNonWhitelisted:true`) menolak field asing pada body (mis. `cardNumber`, `cvv`) dengan 400, bukan diam-diam menerimanya. MVP memakai hosted checkout: sesi hanya mengembalikan `checkoutUrl` provider. Tak ada field kartu/CVV/PIN/OTP di seluruh modul payment.
+
+**Bukti**:
+- `apps/api/src/modules/payments/payments.controller.ts:32-40` — `class CreateCheckoutBody { amount; currency; idempotencyKey }`; call site produksi `createCheckout()` :56 (`@Body() body: CreateCheckoutBody`).
+- `apps/api/src/bootstrap.ts:80-86` — `app.useGlobalPipes(new ValidationPipe({ forbidNonWhitelisted:true, … whitelist:true }))`.
+- Perintah: `Select-String -Path apps/api/src/modules/payments -Pattern 'cvv|CVV|cardNumber|card_number|cardholder|securityCode|panNumber|\bOTP\b|\bPIN\b'` → **0 keluaran**.
+
+### REQ-17-006 — Logistik MVP read-first (tanpa mutasi) · TERPENUHI · -
+
+**Persyaratan** (`17 §2.6`, ADR-028): "MVP logistics is read-first: import/link a shipment, fetch tracking, normalize events, and notify. Shipment purchase, label, pickup, and return mutations arrive after the tracking foundation is stable."
+
+**Kondisi nyata**: `LogisticsController` hanya mengekspos link/import, list, get (customer view), dan appendEvent (simulasi milestone read-only). Tak ada rute purchase/label/pickup/cancel/quote/return.
+
+**Bukti**:
+- `apps/api/src/modules/logistics/logistics.controller.ts:73` `POST shipments` (link), `:95` `GET shipments` (list), `:109` `GET shipments/:trackingNumber` (get→`customerView`), `:124` `POST shipments/:trackingNumber/events` (appendEvent; komentar "read-only vertical").
+- Controller dibaca penuh: tak ada handler label/pickup/cancel/return.
+
+### REQ-17-008 — Tipe SDK provider tak bocor ke entitas core · TERPENUHI · -
+
+**Persyaratan** (`17 §2.8`): "Provider SDK types never leak into core entities. Payment and shipping providers implement internal adapters and capability manifests."
+
+**Kondisi nyata**: Kosakata status dideklarasikan oleh domain/adapter internal, bukan diimpor dari SDK provider. `PaymentStatus` di-*declare* di `@chai/domain` (komentar eksplisit "Defined here rather than imported from a connector"), `ShipmentMilestone` di-*declare* di adapter internal `mock-shipping`; adapter JNE me-*re-export* tipe internal itu, bukan tipe SDK JNE.
+
+**Bukti**:
+- `packages/domain/src/payments/transitions.ts:33` — `export type PaymentStatus = …` (union lokal domain).
+- `packages/connectors/src/connectors/mock-shipping/index.ts:3` — `export type ShipmentMilestone = …` (union kanonik adapter).
+- `packages/connectors/src/connectors/jne/index.ts:5` — `export type { ShipmentMilestone, TrackingEvent } from '../mock-shipping/index.js'`.
+
+### REQ-17-010 — Kapabilitas high-risk di balik gate rollout · TERPENUHI · -
+
+**Persyaratan** (`17 §2.10`): "Refunds, payouts, split payments, recurring mandates, shipment cancellation after handoff, and return creation are high-risk capabilities with explicit rollout gates."
+
+**Kondisi nyata**: Setiap kapabilitas high-risk digerbangi entitlement (rollout gate per-tenant) di katalog tool, dan controller Stage-2 memanggil `assertCapabilityEnabled` sebelum aksi. Refund/subscription default mati hingga entitlement dinyalakan.
+
+**Bukti**:
+- `packages/domain/src/ai-policy/tool-policy.ts:84,93,98,108,115` — `requiredEntitlement`: `payment.request_refund`→`payment_refunds`, `shipment.create`→`shipment_create_label`, `schedule_pickup`→`shipment_pickup`, `create_return`→`shipment_returns`, `payment.execute_refund`→`payment_refunds`.
+- `apps/api/src/modules/advanced-payments/advanced-payments.controller.ts:131` `processRefund()`→`assertCapabilityEnabled('payment_refunds')`; :89 `createSubscription()`→`assertCapabilityEnabled('payment_recurring')` (call site produksi).
+- Gate ditegakkan di `evaluateToolPolicy` (`FEATURE_NOT_ENABLED` DENY) — `tool-policy.ts` sekitar :193.
+
+### REQ-17-017 — Transisi hanya dari bukti provider terverifikasi · TERPENUHI · -
+
+**Persyaratan** (`17 §6.2`): "Transitions are accepted only from a verified provider event, verified status query, or authorized local command whose effect is subsequently reconciled."
+
+**Kondisi nyata**: Perubahan `chai.payment.status` hanya lewat `decidePaymentTransition`, dipanggil di dua jalur produksi: (a) webhook API setelah verifikasi HMAC, dan (b) worker rekonsiliasi setelah authenticated status query. Tak ada penulis status lain.
+
+**Bukti**:
+- `packages/domain/src/payments/transitions.ts:71` `decidePaymentTransition()`.
+- `apps/api/src/modules/payments/postgres-payments.repository.ts:174` — call site webhook (setelah `verifyMockPaymentWebhookSignature`, `FOR UPDATE` :167).
+- `workers/payment-worker/src/reconcile.ts` `applyReconciliation()` memanggil `decidePaymentTransition` (dipicu `runPaymentReconciler`, `main.ts:38`).
+- Tes: `apps/api/src/modules/payments/payment-transitions.test.ts:22,38,49,58`.
+
+### REQ-17-022 — Halaman redirect sukses bukan bukti settlement · TERPENUHI · -
+
+**Persyaratan** (`17 §6.5`): "A redirect success page is customer UX only, not settlement proof."
+
+**Kondisi nyata**: Tak ada jalur kode yang menandai `PAID` dari redirect/return URL. Status hanya berubah lewat `decidePaymentTransition` dari webhook terverifikasi atau reconcile query (sama dengan REQ-17-004). Rute payment tak punya endpoint "confirm from redirect".
+
+**Bukti**:
+- `apps/api/src/modules/payments/postgres-payments.repository.ts:143` `applyWebhook()` (verifikasi HMAC dulu) & `workers/payment-worker/src/reconcile.ts` — satu-satunya penulis status.
+- `apps/api/src/modules/payments/payments.controller.ts` — rute hanya checkout/list/get/webhook (:119); tak ada rute redirect/return→PAID.
+
+### REQ-17-036 — Aksi logistik berbiaya/destruktif butuh policy/konfirmasi · TERPENUHI · - (sisi policy)
+
+**Persyaratan** (`17 §7.5`): "Address correction, label purchase, pickup, cancellation, and return may create cost or operational impact and therefore require policy/confirmation."
+
+**Kondisi nyata**: Semua aksi logistik berbiaya bertier HIGH (butuh approval manusia) di katalog tool, dan `logistics.cancel` CRITICAL non-AI. `evaluateToolPolicy` memaksa `REQUIRE_APPROVAL` untuk HIGH/CRITICAL sebelum `ALLOW`. Ini sisi policy; eksekutor mutasinya sendiri belum ada di MVP read-first (dilacak REQ-17-072).
+
+**Bukti**:
+- `packages/domain/src/ai-policy/tool-policy.ts:93,98,108` — `shipment.create/schedule_pickup/create_return` = HIGH; :124 `logistics.cancel` = CRITICAL `aiExecutable:false`.
+- `packages/domain/src/ai-policy/tool-policy.ts:206` — cabang HIGH/CRITICAL → `APPROVAL_REQUIRED` bila `!approvedBy`.
+- Call site produksi: `apps/api/src/modules/actions/actions.controller.ts:76` (`evaluateActionPolicy`; throw `ForbiddenException` pada deny :86).
+
+### REQ-17-037 — Hasil submit tak pasti direkonsiliasi sebelum shipment/label baru · TIDAK-TERVERIFIKASI · -
+
+**Persyaratan** (`17 §7.5`): "Unknown submit result is reconciled before another shipment/label is created."
+
+**Kondisi nyata**: Persyaratan ini menyangkut PEMBUATAN shipment/label. Di MVP read-first tak ada rute create/label/purchase (REQ-17-006), sehingga tak ada operasi create yang bisa menghasilkan "unknown submit result" untuk direkonsiliasi. Kondisinya belum eksis; tak dapat diputuskan TERPENUHI/HILANG secara statis.
+
+**Bukti**: `apps/api/src/modules/logistics/logistics.controller.ts` — hanya link/list/get/appendEvent (dibaca penuh); tak ada `createShipment`/`purchaseLabel`.
+
+**Yang dibutuhkan untuk memutuskan**: Verifikasi ulang saat mutasi logistik (Stage 2) diaktifkan — buktikan jalur create memarkir hasil tak pasti dan merekonsiliasi sebelum membuat shipment/label kedua.
+
+### REQ-17-043 — Endpoint owner: health/lag/mismatch tanpa secret/alamat/PoD · TIDAK-TERVERIFIKASI · -
+
+**Persyaratan** (`17 §8`): "Owner endpoints expose cross-tenant health, lag, failures, and reconciliation mismatch metadata, but do not expose unrestricted payment secrets, customer addresses, or proof-of-delivery content."
+
+**Kondisi nyata**: Permukaan owner (owner-console + owner API) berada di luar cakupan berkas jalur C (domain payment/logistics). Apakah endpoint owner payment/logistics health/lag/mismatch ada dan menyaring secret/alamat/PoD memerlukan penelusuran modul owner (jalur E/F). Selain itu event `payment.reconciliation_mismatch` belum di-emit (REQ-17-065 HILANG), jadi metadata mismatch belum bersumber.
+
+**Yang dibutuhkan untuk memutuskan**: Telaah owner-console/owner API (jalur E/F): daftar endpoint owner payment/logistics + pembuktian payload mengecualikan secret/alamat/PoD. Bergantung pula pada REQ-17-065.
+
+### REQ-17-046 — Isolasi beban antrian (6 queue); antrian tak bawa kredensial · TIDAK-TERVERIFIKASI · -
+
+**Persyaratan** (`17 §9.3`): enam antrian bernama (payment-webhook/command/reconciliation, logistics-webhook/command/poll) dengan isolasi prioritas; "Queues carry tenant and resource references, never provider credentials or full sensitive payloads."
+
+**Kondisi nyata**: Implementasi payment/logistik memakai poller interval (`runPaymentReconciler`/`runLogisticsReconciler`) + outbox Redis Streams, bukan enam antrian bernama itu. Bagian normatif "antrian tak membawa kredensial" memerlukan telaah bentuk payload broker (jalur B/F), di luar cakupan berkas ini.
+
+**Bukti**: `Select-String -Pattern 'payment-webhook|payment-reconciliation|logistics-webhook|logistics-poll|payment-command|logistics-command'` di kode produksi (`apps/`, `workers/`, `packages/broker`) → tak ada definisi queue bernama (hanya blueprint/plan/audit docs). `workers/payment-worker/src/main.ts:38` & `workers/logistics-worker/src/main.ts:39` — poller, bukan konsumen antrian bernama.
+
+**Yang dibutuhkan untuk memutuskan**: Telaah `packages/broker` + worker (jalur B/F): apakah isolasi beban 6-antrian dipenuhi model poller+streams, dan buktikan payload broker payment/logistik tak memuat kredensial provider.
+
+### REQ-17-047 — Risk tier + default AI tool policy (§10) · TERPENUHI · - (ADR-011)
+
+**Persyaratan** (`17 §10`): tabel risk tier tool (GetPaymentStatus Low, CreatePaymentLink Medium+confirm, RequestRefund High, ExecuteRefund Critical non-AI, GetShipmentStatus/Timeline Low, CreateShipment/SchedulePickup/CancelShipment/CreateReturnShipment High, GetProofOfDelivery Medium) — "AI never directly invokes external side effect".
+
+**Kondisi nyata**: `TOOL_CATALOG` tunggal memuat tier yang cocok §10, dan `evaluateToolPolicy` menegakkan urutan: unknown→DENY, HUMAN_ACTIVE/PAUSED→DENY, `!aiExecutable`→DENY, entitlement, lalu tangga approval/confirmation. Dipanggil di produksi lewat `evaluateActionPolicy` (API) dan dijaga eksekutor ai-gateway yang menolak apa pun bukan `ALLOW` yang cocok.
+
+**Bukti**:
+- `packages/domain/src/ai-policy/tool-policy.ts:38` `TOOL_CATALOG`, :152 `evaluateToolPolicy` (unknown→`UNKNOWN_TOOL` :158, `!aiExecutable`→`AI_EXECUTION_FORBIDDEN` :184, HIGH/CRITICAL→`APPROVAL_REQUIRED` :206).
+- `apps/api/src/modules/actions/action-policy.ts:23,31` `evaluateActionPolicy` membungkus `evaluateToolPolicy`; call site `apps/api/src/modules/actions/actions.controller.ts:76`.
+- `services/ai-gateway/src/tool-execution.ts:135,142` — `execute()` menolak bila `decision.kind !== 'ALLOW'` atau `decision.tool !== toolName`.
+- Tes: `apps/api/src/modules/actions/action-policy.test.ts` (10 kasus, mis. :12,25,34).
+
+**Catatan**: apakah SETIAP panggilan tool ai-gateway melewati `evaluateToolPolicy` sebelum `execute` adalah domain jalur D; di sini terbukti eksekutor tak bisa jalan tanpa keputusan `ALLOW` yang cocok.
+
+### REQ-17-050 — Webhook signature/timestamp+replay+body-limit+inbox dedup · SEBAGIAN · MEDIUM
+
+**Persyaratan** (`17 §13.5`): "Verify webhook signature/timestamp; use replay protection, body limits, raw-payload restricted retention, and inbox deduplication."
+
+**Kondisi nyata**: Verifikasi **signature** HMAC-SHA256 (constant-time) **terpenuhi dan diuji**. **Timestamp**, jendela **replay**, dan **body limit** khusus rute webhook payment **tidak ada**. Dedup via state machine (status sama→IGNORE), bukan inbox `PaymentWebhookEvent` ber-dedup persist.
+
+**Bukti**:
+- `packages/connectors/src/connectors/mock-payment/index.ts:61-67` `signatureMatches()` (HMAC + `timingSafeEqual`), :87 `verifyMockPaymentWebhookSignature()`; tes `packages/connectors/src/conformance/payment.test.ts:30` ("rejects webhooks with bad signature"). ✔ signature
+- `apps/api/src/modules/payments/payments.controller.ts:121` `webhook()` hanya baca `x-payment-signature`; perintah `Select-String -Path apps/api/src/modules/payments -Pattern 'timestamp|replay|nonce|x-timestamp|Retry-After'` → **0 keluaran**. ✘ timestamp/replay/body-limit
+- Tak ada tabel `chai.payment_webhook_event` inbox ber-dedup.
+
+**Yang kurang**: Verifikasi timestamp + jendela replay + body limit di edge webhook, plus inbox event ber-dedup dengan retensi payload mentah terbatas.
+
+### REQ-17-051 — Tak melog token/alamat/PoD/payload provider · TIDAK-TERVERIFIKASI · -
+
+**Persyaratan** (`17 §13.6`): "Do not log payment URLs containing sensitive tokens, full addresses, bank references, proof-of-delivery images, or unrestricted provider payloads."
+
+**Kondisi nyata**: Pembuktian "tidak melog" adalah pernyataan negatif atas SELURUH sink logging (logger app, audit, telemetry) — cakupan jalur A/F, bukan berkas domain ini. Yang bisa dicatat: `commitBusinessMutation` menulis metadata audit terpilih (`externalId`, `fromStatus`/`toStatus`, `currency`), **bukan** `checkout_url`/token; dan `chai.shipment` MVP tak menyimpan alamat/PoD (REQ-17-039). Audit menyeluruh semua sink butuh jalur A/F.
+
+**Bukti**: `apps/api/src/modules/payments/postgres-payments.repository.ts:208-241` — metadata audit `payment.status_changed` memuat `externalId/currency/status`, bukan `checkout_url`/token.
+
+**Yang dibutuhkan untuk memutuskan**: Audit logging lintas layanan (jalur A/F): buktikan tak ada logger/telemetry yang mencetak `checkout_url`/token/alamat/PoD/payload provider mentah.
+
+### REQ-17-053 — Lookup tracking butuh user terautentikasi atau verifikasi identitas/order pelanggan · SEBAGIAN · HIGH
+
+**Persyaratan** (`17 §13.8`): "Tracking lookup requires an authenticated client user or an end-customer identity/order verification policy."
+
+**Kondisi nyata**: Rute tracking live `GET .../logistics/shipments/:trackingNumber` dijaga audience `client-portal` + permission `shipment.read` — jadi butuh **user staf terautentikasi** (cabang pertama terpenuhi). Cabang **verifikasi identitas/order end-customer** (self-service) **tak tersambung**: `customerLookup` (fail-closed) ada+diuji tetapi tak dipanggil rute mana pun; rute live memakai `customerView` tanpa bukti kepemilikan.
+
+**Bukti**:
+- `apps/api/src/modules/logistics/logistics.controller.ts:96,109-115` — `get()` dijaga `shipment.read`, memanggil `customerView` (tanpa proof).
+- `apps/api/src/modules/logistics/postgres-logistics.repository.ts:173-200` `customerLookup()` (fail-closed `ownsByContact||ownsByOrder`, else `return null` :198).
+- `Select-String customerLookup apps/api/src` → hanya definisi repo (`logistics.repository.ts`, `postgres-logistics.repository.ts:173`); call site hanya tes `apps/api/test/logistics-ownership.e2e.test.ts:45,54,62,68,76,84` — **tak ada controller**.
+
+**Yang kurang**: Rute self-service end-customer (audience non-staf) yang memanggil `customerLookup` dengan bukti identitas/order; jangan ekspos detail via `customerView` untuk pemanggil non-staf.
+
+### REQ-17-054 — Retensi/hapus/ekspor data payment & delivery · TIDAK-TERVERIFIKASI · -
+
+**Persyaratan** (`17 §13.9`): "Payment and delivery data enter retention/deletion/export policies, except records that must be retained under contract or applicable law…".
+
+**Kondisi nyata**: Ada mekanisme retensi generik `0030_retention_policy.sql` (berbasis kolom `retention_days`), tetapi migrasi itu **tidak** menyebut tabel payment/shipment/refund secara eksplisit. Apakah `chai.payment`/`chai.shipment`/`chai.refund` benar-benar terdaftar (via data kebijakan/runner) dan adanya jalur ekspor/hapus untuk keduanya perlu telaah retensi/PII (jalur A).
+
+**Bukti**: `Select-String -Path packages/database/migrations/0030_retention_policy.sql -Pattern 'payment|shipment|refund|delivery'` → hanya definisi kolom generik `retention_days` (baris 8); tak ada tabel payment/delivery bernama.
+
+**Yang dibutuhkan untuk memutuskan**: Telaah jalur A (retensi/PII): apakah tabel payment/delivery terdaftar dalam kebijakan retensi + adanya jalur ekspor/hapus subjek data.
+
+### REQ-17-055 — Target SLO §14 · TIDAK-TERVERIFIKASI · -
+
+**Persyaratan** (`17 §14`): target terukur (webhook persist/ack ≥99.5%/99.9%, duplicate side effect <0.1%/0.01%, projection p95 <2min/<30s, mismatch age, dst.).
+
+**Kondisi nyata**: Ini metrik perilaku runtime (persentase, p95, aging) yang tak dapat diputuskan secara statis dari kode. Mekanisme fondasinya sebagian ada (idempotency, `UNKNOWN_RESULT`, poller), tetapi pemenuhan ANGKA SLO butuh pengukuran beban/produksi.
+
+**Bukti**: Tak ada berkas yang membuktikan/membantah angka SLO secara statis; K-05 rencana induk mencatat performa belum terukur.
+
+**Yang dibutuhkan untuk memutuskan**: Instrumentasi + pengukuran runtime (jalur F): metrik webhook persist/ack, projection p95, duplicate-rate, mismatch-age terhadap target §14.
+
+### REQ-17-058 — PAY-01 Isolasi kredensial/transaksi tenant (RLS/secret/queue/cache/audit) · SEBAGIAN · HIGH
+
+**Koreksi kelas**: dari `TERPENUHI` → `SEBAGIAN` karena PAY-01 mensyaratkan isolasi juga lewat **secret reference** per-tenant, sedangkan secret webhook adalah konstanta env **global** (bukan referensi per-tenant); komponen queue/cache pun belum terverifikasi (REQ-17-046). Baris tabel diperbaiki.
+
+**Persyaratan** (`17 §18 PAY-01`): "Tenant merchant credentials and transactions are isolated by RLS, secret reference, queue, cache, and audit."
+
+**Kondisi nyata**: **Transaksi** ber-isolasi kuat (RLS `ENABLE`+`FORCE` pada `chai.payment` + policy `tenant_id = chai.current_tenant_id()`) dan **audit** ber-tenant lewat `commitBusinessMutation`. Tetapi **kredensial** tak ber-isolasi via secret reference per-tenant: verifikasi webhook memakai satu konstanta `MOCK_PAYMENT_WEBHOOK_SECRET` global (satu secret mengamankan semua tenant). Isolasi **queue/cache** tak terverifikasi (jalur B/F, REQ-17-046).
+
+**Bukti**:
+- RLS: `packages/database/migrations/0010_payments.sql:25-27,31` (`ENABLE`/`FORCE`/`tenant_isolation`/`REVOKE ALL`). ✔
+- Audit ber-tenant: `apps/api/src/modules/payments/postgres-payments.repository.ts:205-241` (`commitBusinessMutation` menulis audit `payment.status_changed` dalam tx tenant). ✔
+- Secret global: `packages/connectors/src/connectors/mock-payment/index.ts:48-49` `webhookSecret()` → `env.MOCK_PAYMENT_WEBHOOK_SECRET ?? 'mock-payment-webhook-secret'` (bukan per-tenant). ✘ (senada REQ-17-011/049)
+
+**Yang kurang**: Referensi secret-manager per-tenant untuk kredensial provider (bukan konstanta global), plus pembuktian isolasi queue/cache per-tenant (REQ-17-046).
+
+### REQ-17-059 — PAY-02 Amount/currency/purpose link dari data bisnis tepercaya + konfirmasi · SEBAGIAN · HIGH
+
+**Persyaratan** (`17 §18 PAY-02`): "Hosted link amount/currency/purpose come from approved business data and are confirmed according to policy."
+
+**Kondisi nyata**: `POST client/v1/payments/checkout` menerima `amount`/`currency` **langsung dari body pemanggil** (`@IsInt @Min(1)` + `@IsString`), tanpa ikatan server ke invoice/order/katalog yang disetujui, tanpa `purpose`/business reference, dan tanpa langkah konfirmasi sisi-server. Tak ada otoritas amount yang menolak nilai karangan.
+
+**Bukti**:
+- `apps/api/src/modules/payments/payments.controller.ts:32-40,56` — `CreateCheckoutBody { amount, currency, idempotencyKey }` → `repository.createCheckout(tenant, body)` apa adanya.
+- `packages/database/migrations/0010_payments.sql:2-14` — `chai.payment` tak menyimpan `order_id/invoice_id/purpose`.
+
+**Yang kurang**: Turunkan/validasi amount+currency dari sumber bisnis tepercaya (invoice/order/katalog) di server, sertakan `purpose`, dan untuk origin AI wajibkan draft yang disetujui manusia sebelum link dibuat.
+
+### REQ-17-062 — PAY-05 Hasil create tak dikenal direkonsiliasi sebelum retry · TERPENUHI · -
+
+**Persyaratan** (`17 §18 PAY-05`): "Unknown create result is reconciled before retry."
+
+**Kondisi nyata**: Status provider tak dikenal dipetakan gagal-aman ke `UNKNOWN_RESULT` (state eksekusi non-terminal), sehingga sesi tetap dibuka untuk reconciler alih-alih ditebak terminal. Create idempoten (unique index (tenant_id, idempotency_key) + SELECT-existing), jadi retry dengan key sama mengembalikan sesi yang sama, bukan charge/link kedua. Reconciler adalah entrypoint worker produksi.
+
+**Bukti**:
+- `workers/payment-worker/src/reconcile.ts:44` `canonicalPaymentStatus()` → tak dikenal = `UNKNOWN_RESULT`; :130 `selectNonTerminalPayments` (`status IN ('CREATED','PENDING','UNKNOWN_RESULT')`); di-run `runPaymentReconciler` (`main.ts:38`).
+- `packages/domain/src/payments/transitions.ts:45` — `UNKNOWN_RESULT` non-terminal.
+- `packages/database/migrations/0010_payments.sql:19` `payment_tenant_idempotency_uidx`; `postgres-payments.repository.ts` `createCheckout` SELECT-existing dulu.
+- Tes: `workers/payment-worker/test/reconcile.integration.test.ts:99` ("parks an unrecognised provider status at UNKNOWN_RESULT without closing the session").
+
+### REQ-17-064 — PAY-07 Refund nonaktif s.d. approval+recent-auth+rekonsiliasi+tes provider · SEBAGIAN · HIGH
+
+**Persyaratan** (`17 §18 PAY-07`): "Refund execution is disabled until approval, recent-auth, reconciliation, and provider tests pass."
+
+**Kondisi nyata**: **Terpenuhi**: gate entitlement (`payment_refunds`, default mati), recent-auth, permission `payment.approve`, dan domain menolak refund non-PAID / amount > payment (`FOR UPDATE`, integer minor units, idempoten). **Tak terpenuhi**: threshold moneter (tak ada), audit+event dalam transaksi (`processRefund` INSERT tanpa `commitBusinessMutation`), dan rekonsiliasi provider (refund tetap `PENDING`, tak ada reconciler refund).
+
+**Bukti**:
+- `apps/api/src/modules/advanced-payments/advanced-payments.controller.ts:118-132` — `@RequirePermission('payment.approve')` (:121) + `assertCapabilityEnabled('payment_refunds')` (:131) + `assertRecentAuthentication` (:132). ✔
+- `packages/domain/src/payments/refund.ts:37-77` — `PAYMENT_NOT_REFUNDABLE` (:60), `REFUND_EXCEEDS_PAYMENT` (:63), `FOR UPDATE` (:53), INSERT status `PENDING` (:68) **tanpa** `commitBusinessMutation`. ✘
+- Tak ada reconciler yang memindah `chai.refund.status` PENDING→COMPLETED dari provider.
+
+**Yang kurang**: (a) cek threshold moneter (approval dua-orang di atas ambang), (b) bungkus `processRefund` dengan `commitBusinessMutation` (audit + `refund.requested/status_changed`), (c) reconciler refund terhadap provider.
+
+### REQ-17-066 — LOG-01 Data tenant-isolated + lookup end-customer verifikasi ownership · SEBAGIAN · HIGH
+
+**Persyaratan** (`17 §18 LOG-01`): "Shipment/tracking data is tenant-isolated and end-customer lookup verifies ownership."
+
+**Kondisi nyata**: **Isolasi tenant terpenuhi** (RLS `ENABLE`+`FORCE` pada `chai.shipment` + policy tenant). **Verifikasi ownership end-customer** ada sebagai `customerLookup` (fail-closed) dan diuji, tetapi **tak tersambung ke rute**; rute live memakai `customerView` tenant-scoped tanpa bukti kepemilikan (sama dengan REQ-17-053).
+
+**Bukti**:
+- RLS: `packages/database/migrations/0011_logistics.sql:21-23,27` (`ENABLE`/`FORCE`/`tenant_isolation`/`REVOKE`).
+- `apps/api/src/modules/logistics/postgres-logistics.repository.ts:173-200` `customerLookup()` fail-closed; call site hanya tes `apps/api/test/logistics-ownership.e2e.test.ts:20,83` (mis. "reveals nothing for a guessed tracking number"); **tak ada controller**.
+
+**Yang kurang**: Sambungkan `customerLookup` (bukti identitas/order) ke rute self-service end-customer; jangan ekspos detail via `customerView` untuk pemanggil non-staf.
+
+### REQ-17-067 — LOG-02 Status kanonik berversi + kode unknown gagal-aman · SEBAGIAN · MEDIUM
+
+**Persyaratan** (`17 §18 LOG-02`): "Provider statuses map to versioned canonical states and unknown codes fail safely."
+
+**Kondisi nyata**: **Gagal-aman terpenuhi** (kode tak dikenal → `UNKNOWN` di adapter JNE + pertahanan lapis dua di worker) dan **berversi terpenuhi** (`JNE_STATUS_MAP_VERSION` ikut tiap event). **Kurang**: himpunan status kanonik menciutkan `REJECTED/RETURN/CANCEL` (dan exception lain) ke `EXCEPTION` alih-alih taxonomy lengkap §7.2.
+
+**Bukti**:
+- `packages/connectors/src/connectors/jne/index.ts:54` `JNE_STATUS_MAP_VERSION=1`, :90-102 `mapJneMilestone` (`mapped ?? 'UNKNOWN'`, flag `unmapped`); :56 `MILESTONE_MAP` (REJECTED/RETURN/CANCEL→EXCEPTION).
+- `workers/logistics-worker/src/reconcile.ts:50` `canonicalMilestone()` tak dikenal→`UNKNOWN` (di-run `runLogisticsReconciler`, `main.ts:39`).
+- Tes: `packages/connectors/src/conformance/logistics-canonical.test.ts:25,45` ("fails safe to UNKNOWN…", "carries the mapping version…"); `conformance/jne.test.ts:208`.
+
+**Yang kurang**: Perluas himpunan status kanonik ke daftar §7.2 (ON_HOLD/DELIVERY_FAILED/ADDRESS_ISSUE/CUSTOMS_HOLD/LOST/DAMAGED/RETURNING/RETURNED) alih-alih menciutkan ke `EXCEPTION`.
+
+### REQ-17-068 — LOG-03 Duplikat/out-of-order → satu timeline immutable + state benar · TERPENUHI · - (invarian)
+
+**Persyaratan** (`17 §18 LOG-03`): "Duplicate/out-of-order tracking events create one immutable timeline and correct current state."
+
+**Kondisi nyata**: Timeline append-only; dedup pada `providerEventId` di dalam row lock; status = event terbaru **menurut waktu provider** (bukan urutan tiba), di ketiga jalur (repo API, worker, adapter mock). Ada tes yang menegakkan dedup + urutan.
+
+**Bukti**:
+- `apps/api/src/modules/logistics/postgres-logistics.repository.ts:226-236` `appendEvent()` — `FOR UPDATE`, dedup `prior.eventId === event.providerEventId`, sort by `at`.
+- `workers/logistics-worker/src/reconcile.ts:247` `reconcileShipment()` — filter `!priorIds.has(providerEventId)`, commit via `commitBusinessMutation` (`main.ts:39`).
+- `packages/connectors/src/connectors/mock-shipping/index.ts:109-121` `appendEvent()` dedup (komentar LOG-03).
+- Tes: `packages/connectors/src/conformance/logistics-canonical.test.ts:53,76` ("ignores a redelivered provider event", "orders out-of-order scans by provider time"); `workers/logistics-worker/test/reconcile.integration.test.ts:127`.
+
+---
+
 ## Rekapitulasi
 
 Dihitung dengan perintah di heading berkas ini, dijalankan atas berkas ini (tabel Ringkasan, 73 baris `REQ-17-###`):
@@ -674,20 +943,20 @@ Dihitung dengan perintah di heading berkas ini, dijalankan atas berkas ini (tabe
 Name                Count
 ----                -----
 HILANG                  5
-SEBAGIAN               37
-TERPENUHI              24
+SEBAGIAN               38
+TERPENUHI              23
 TIDAK-TERVERIFIKASI     7
 ```
 
 Total REQ: 73. `BERTENTANGAN`: 0.
 
-Per severity (42 temuan non-`TERPENUHI`/non-`TIDAK-TERVERIFIKASI`):
+Per severity (43 temuan non-`TERPENUHI`/non-`TIDAK-TERVERIFIKASI`):
 - **CRITICAL (3)**: REQ-17-009 (efek eksternal tanpa audit+event dalam satu tx di jalur webhook), REQ-17-019 (on-PAID tak update proyeksi/stop reminder), REQ-17-063 (PAY-06 HILANG).
-- **HIGH (11)**: REQ-17-011, 021, 027, 033, 044, 049, 053, 059, 064, 065, 066 (tema ownership-lookup, refund, secret-manager, event kanonik).
+- **HIGH (12)**: REQ-17-011, 021, 027, 033, 044, 049, 053, 058, 059, 064, 065, 066 (tema ownership-lookup, refund, secret-manager, event kanonik).
 - **MEDIUM (23)**: sisa SEBAGIAN/HILANG (mis. 002, 005, 012, 020, 023, 028, 029, 030, 031, 034, 038, 041, 042, 048, 050, 056, 057, 067, 070, 071, 072, 073).
 - **LOW (5)**: REQ-17-016, 024, 035, 039, 045.
 
-> Verifikasi ulang klaim kematangan §1 rencana ("Payment & logistics ~50%"): rasio `TERPENUHI` (24) terhadap total REQ (73) = **≈33%** *strict* (call-site-proven). Bila `TIDAK-TERVERIFIKASI` (7, sebagian milik jalur lain) dikeluarkan dari penyebut: 24/66 = **≈36%**. Angka ~50% warisan **terlalu optimis** untuk invarian yang dinilai ketat; fondasi uang/status/UNKNOWN kuat, tetapi katalog event, proyeksi on-PAID, rekonsiliasi mismatch, exception/PoD, dan wiring ownership-lookup masih utang.
+> Verifikasi ulang klaim kematangan §1 rencana ("Payment & logistics ~50%"): rasio `TERPENUHI` (23) terhadap total REQ (73) = **≈32%** *strict* (call-site-proven). Bila `TIDAK-TERVERIFIKASI` (7, sebagian milik jalur lain) dikeluarkan dari penyebut: 23/66 = **≈35%**. Angka ~50% warisan **terlalu optimis** untuk invarian yang dinilai ketat; fondasi uang/status/UNKNOWN kuat, tetapi katalog event, proyeksi on-PAID, rekonsiliasi mismatch, exception/PoD, isolasi secret-reference per-tenant, dan wiring ownership-lookup masih utang.
 
 ---
 
@@ -695,7 +964,7 @@ Per severity (42 temuan non-`TERPENUHI`/non-`TIDAK-TERVERIFIKASI`):
 
 ```
 REQ dihasilkan: 73
-  TERPENUHI 24 | SEBAGIAN 37 | HILANG 5 | BERTENTANGAN 0 | TIDAK-TERVERIFIKASI 7
+  TERPENUHI 23 | SEBAGIAN 38 | HILANG 5 | BERTENTANGAN 0 | TIDAK-TERVERIFIKASI 7
 Temuan severity tertinggi:
   REQ-17-009 (CRITICAL) - jalur webhook payment mengubah state uang tanpa audit+outbox dalam satu transaksi (invarian ADR-007)
   REQ-17-063 (CRITICAL, HILANG) - PAY-06: event paid tidak menghentikan reminder / update proyeksi
@@ -703,7 +972,7 @@ Temuan severity tertinggi:
 Invarian inti yang AMAN (TERPENUHI, terbukti terpanggil + tes):
   uang integer minor units (014), immutability trigger (015), PAID tak mundur (018/061),
   unknown->UNKNOWN payment (025) & logistik gagal-aman (031 sisi mapping), refund non-AI (026),
-  RLS+FORCE semua entitas (052/058), timeline immutable+dedup (032/068), status hanya dari bukti provider (004/060).
+  RLS+FORCE semua entitas (052; PAY-01/058 SEBAGIAN krn secret-ref global), timeline immutable+dedup (032/068), status hanya dari bukti provider (004/060).
 Berkas keluaran: docs/audit/2026-07-29/jalur-c-payment-logistics.md
 Self-check 6 butir: semua "ya"; §19/§20 blueprint proses-manusia (bukan REQ kode) dicatat, bukan dilewati.
 ```

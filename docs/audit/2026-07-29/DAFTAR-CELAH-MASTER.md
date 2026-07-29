@@ -22,8 +22,8 @@
 
 ## Ringkasan eksekutif (tiga kalimat)
 
-Dari **309 persyaratan normatif** yang diekstrak enam jalur, hanya **74 (24%) TERPENUHI** secara
-call-site-proven; **171 SEBAGIAN**, **45 HILANG**, **1 BERTENTANGAN**, **18 TIDAK-TERVERIFIKASI**.
+Dari **309 persyaratan normatif** yang diekstrak enam jalur, hanya **73 (24%) TERPENUHI** secara
+call-site-proven; **173 SEBAGIAN**, **44 HILANG**, **1 BERTENTANGAN**, **18 TIDAK-TERVERIFIKASI**.
 Invarian inti proyek yang paling mahal **sebagian besar aman** (uang integer minor units, RLS
 default-deny+FORCE, `PAID` tak mundur, unknown→UNKNOWN, policy engine sebagai satu-satunya gerbang
 efek samping tool AI) — tetapi ada **tiga cacat CRITICAL pada jalur uang** (semua di Jalur C) dan
@@ -49,7 +49,7 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | REQ-17-019 | C | Alur hosted-payment lengkap: on-PAID update proyeksi+stop reminder+notifikasi+atribusi | SEBAGIAN | CRITICAL |
 | REQ-17-063 | C | PAY-06: event paid update proyeksi + stop reminder tepat sekali | HILANG | CRITICAL |
 
-### 1.2 HIGH (36)
+### 1.2 HIGH (37)
 
 | ID | Jalur | Persyaratan (singkat) | Kelas | Severity |
 |---|---|---|---|---|
@@ -69,6 +69,7 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | REQ-17-044 | C | Event kanonik payment.*/shipment.* (mayoritas hilang) | SEBAGIAN | HIGH |
 | REQ-17-049 | C | Secret manager per-tenant/least-scope/rotasi/audited | SEBAGIAN | HIGH |
 | REQ-17-053 | C | Lookup tracking butuh user terautentikasi atau verifikasi identitas/order | SEBAGIAN | HIGH |
+| REQ-17-058 | C | PAY-01: isolasi kredensial/transaksi tenant — secret webhook global, bukan referensi secret-manager per-tenant (koreksi kelas jalur C) | SEBAGIAN | HIGH |
 | REQ-17-059 | C | PAY-02: amount/currency/purpose dari data bisnis tepercaya + konfirmasi | SEBAGIAN | HIGH |
 | REQ-17-064 | C | PAY-07: refund nonaktif s.d. approval+recent-auth+rekonsiliasi+tes provider | SEBAGIAN | HIGH |
 | REQ-17-065 | C | PAY-08: mismatch produksi punya alert+owner+aging+runbook+audit | HILANG | HIGH |
@@ -206,7 +207,7 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | REQ-04-011 | E | Data display components + DataTable 8 requirement | SEBAGIAN | MEDIUM |
 | REQ-04-013 | E | Feedback: InlineAlert/Toast/Banner/Progress/Skeleton/ErrorBlock | SEBAGIAN | MEDIUM |
 | REQ-04-014 | E | Overlays: Dialog/Drawer/FullScreenFlow/Popover + nested dialog dilarang | SEBAGIAN | MEDIUM |
-| REQ-04-015 | E | Conversation components (16) + visual distinction AI/human/note/failed/tool | HILANG | MEDIUM |
+| REQ-04-015 | E | Conversation components (16) + visual distinction AI/human/note/failed/tool | SEBAGIAN | MEDIUM |
 | REQ-04-016 | E | AI components (9) + hindari confidence % pseudo-ilmiah | HILANG | MEDIUM |
 | REQ-04-017 | E | Analytics chart (6 tipe) + chart rules (title/unit/tz/freshness/table alt) | SEBAGIAN | MEDIUM |
 | REQ-04-018 | E | Forms & validation rules (blur+submit, server→field, unsaved guard, publish diff) | SEBAGIAN | MEDIUM |
@@ -286,15 +287,15 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | REQ-02-009 | F | AI tidak pernah mengimpor/memanggil provider SDK (benar faktual, tak ada guard) | SEBAGIAN | LOW |
 | REQ-02-016 | F | Community WhatsApp Gateway sebagai zona deployment terpisah | HILANG | LOW |
 
-### 1.5 TERPENUHI + TIDAK-TERVERIFIKASI tanpa severity (84) — kolom severity "-"
+### 1.5 TERPENUHI + TIDAK-TERVERIFIKASI tanpa severity (83) — kolom severity "-"
 
-**TERPENUHI (74)** — invarian & kontrol yang terbukti terpanggil di produksi/tes:
+**TERPENUHI (73)** — invarian & kontrol yang terbukti terpanggil di produksi/tes:
 
 | Jalur | ID TERPENUHI (bentuk penuh agar bisa dicari) |
 |---|---|
 | A (14) | REQ-10-001, REQ-10-002, REQ-10-006, REQ-10-007, REQ-10-008, REQ-10-009, REQ-10-011, REQ-10-014, REQ-10-020, REQ-05-001, REQ-05-005, REQ-05-006, REQ-05-007, REQ-05-012 |
 | B (12) | REQ-06-003, REQ-06-004, REQ-06-005, REQ-06-008, REQ-06-009, REQ-06-011, REQ-06-014, REQ-07-001, REQ-07-002, REQ-07-004, REQ-07-005, REQ-07-006 |
-| C (24) | REQ-17-001, REQ-17-003, REQ-17-004, REQ-17-006, REQ-17-008, REQ-17-010, REQ-17-013, REQ-17-014, REQ-17-015, REQ-17-017, REQ-17-018, REQ-17-022, REQ-17-025, REQ-17-026, REQ-17-032, REQ-17-036, REQ-17-040, REQ-17-047, REQ-17-052, REQ-17-058, REQ-17-060, REQ-17-061, REQ-17-062, REQ-17-068 |
+| C (23) | REQ-17-001, REQ-17-003, REQ-17-004, REQ-17-006, REQ-17-008, REQ-17-010, REQ-17-013, REQ-17-014, REQ-17-015, REQ-17-017, REQ-17-018, REQ-17-022, REQ-17-025, REQ-17-026, REQ-17-032, REQ-17-036, REQ-17-040, REQ-17-047, REQ-17-052, REQ-17-060, REQ-17-061, REQ-17-062, REQ-17-068 |
 | D (14) | REQ-08-016, REQ-08-017, REQ-08-019, REQ-08-020, REQ-08-024, REQ-09-002, REQ-09-004, REQ-09-013, REQ-09-022, REQ-09-024, REQ-09-025, REQ-09-031, REQ-09-032, REQ-09-033 |
 | E (1) | REQ-04-020 |
 | F (9) | REQ-02-002, REQ-02-003, REQ-02-004, REQ-02-005, REQ-02-008, REQ-02-010, REQ-02-012, REQ-02-014, REQ-02-020 |
@@ -337,31 +338,122 @@ foreach ($f in $files) {
 |---|---:|---:|---:|---:|---:|---:|
 | A | 14 | 11 | 6 | 0 | 3 | 34 |
 | B | 12 | 14 | 6 | 0 | 1 | 33 |
-| C | 24 | 37 | 5 | 0 | 7 | 73 |
+| C | 23 | 38 | 5 | 0 | 7 | 73 |
 | D | 14 | 48 | 15 | 0 | 3 | 80 |
-| E | 1 | 53 | 11 | 1 | 0 | 66 |
+| E | 1 | 54 | 10 | 1 | 0 | 66 |
 | F | 9 | 8 | 2 | 0 | 4 | 23 |
-| **Total** | **74** | **171** | **45** | **1** | **18** | **309** |
+| **Total** | **73** | **173** | **44** | **1** | **18** | **309** |
 
-Persentase: TERPENUHI **24%**, SEBAGIAN **55%**, HILANG **15%**, BERTENTANGAN **0,3%**,
+Persentase: TERPENUHI **24%** (73/309), SEBAGIAN **56%**, HILANG **14%**, BERTENTANGAN **0,3%**,
 TIDAK-TERVERIFIKASI **6%**.
+
+> **Dua "Koreksi kelas" agen bukti sudah tercermin di angka di atas** (langkah "cerminkan kelas
+> TERKOREKSI, bukan kelas lama"):
+>
+> - **REQ-17-058** (PAY-01) `TERPENUHI → SEBAGIAN/HIGH` — `jalur-c-payment-logistics.md:849`. Baris
+>   tabel sumber jalur C **sudah** disinkronkan oleh agennya, jadi hitung mentah pun sudah C = 23 TERPENUHI / 38 SEBAGIAN.
+> - **REQ-04-015** `HILANG → SEBAGIAN` — `jalur-e-frontend-04-bukti.md:265` (bubble pesan inbound/outbound
+>   dirender di `unified-inbox.tsx:298-305`). Baris tabel sumber `jalur-e-frontend.md` **belum**
+>   disinkronkan (masih HILANG karena agen dok-04 sengaja tak menyunting berkas jalur E lain); angka E di
+>   atas menerapkan koreksi ini di atas hitung mentah. **Hitung mentah tabel sumber E = SEBAGIAN 53 / HILANG 11.**
+>
+> Perintah hitung ulang per-jalur (kelas = kolom 4; severity = kolom 5, dinormalkan ke token pertama agar
+> `LOW (fitur pemicu belum ada)` pada REQ-10-018 ikut terhitung sebagai LOW):
+>
+> ```powershell
+> $rows = Select-String -Path $f -Pattern '^\|\s*REQ-\d{2}-\d{3}\s*\|'
+> $rows | ForEach-Object { ($_.Line -split '\|')[3].Trim() } | Group-Object | Select-Object Name,Count               # kelas
+> $rows | ForEach-Object { ((($_.Line -split '\|')[4].Trim()) -split '\s+')[0] } | Group-Object | Select-Object Name,Count   # severity
+> ```
 
 ### 2.2 Per severity (temuan celah, yaitu non-TERPENUHI)
 
 | Severity | Jumlah | Sebaran jalur |
 |---|---:|---|
 | CRITICAL | 3 | C (3) |
-| HIGH | 36 | A (8), B (1), C (11), D (12), E (2), F (2) |
-| MEDIUM | 131 | A (5), B (9), C (23), D (34), E (42), F (9)* |
+| HIGH | 37 | A (8), B (1), C (12), D (12), E (2), F (2) |
+| MEDIUM | 131 | A (8), B (15), C (23), D (34), E (42), F (9)* |
 | LOW | 55 | A (1), B (5), C (5), D (20), E (21), F (3) |
 | TIDAK-TERVERIFIKASI tanpa severity | 10 | A (3), C (7) |
-| **Total celah** | **235** | (309 − 74 TERPENUHI) |
+| **Total celah** | **236** | (309 − 73 TERPENUHI) |
 
 \* Termasuk TIV yang membawa severity: REQ-07-016 (MEDIUM, B), REQ-08-002 (LOW, D),
 REQ-09-026 (HIGH, D), REQ-09-028 (LOW, D), REQ-02-013/015 (MEDIUM, F), REQ-02-018/023 (HIGH, F).
 
 Total baris seluruh jalur (termasuk TERPENUHI, severity "-") menurut kolom severity:
-CRITICAL 3 · HIGH 36 · MEDIUM 131 · LOW 55 · "-" 84 = 309. **Cocok dengan total per kelas.**
+CRITICAL 3 · HIGH 37 · MEDIUM 131 · LOW 55 · "-" 83 = 309. **Cocok dengan total per kelas.**
+
+> Catatan hitung ulang: sebaran per-jalur MEDIUM dikoreksi menjadi **A (8), B (15)** (versi sebelumnya
+> "A (5), B (9)" salah jumlah — totalnya 122, bukan 131); total MEDIUM tetap 131. Perubahan severity
+> lain hanyalah dampak koreksi REQ-17-058 (`-` → HIGH): HIGH 36→37 dan "-" 84→83. REQ-04-015 tetap
+> MEDIUM di kedua kelas (HILANG maupun SEBAGIAN), jadi distribusi severity tak berubah karenanya.
+
+---
+
+## Status kelengkapan bukti
+
+Dihitung ulang dengan perintah (bukan dari klaim agen) atas **ketujuh** berkas jalur — termasuk berkas
+baru `jalur-e-frontend-04-bukti.md`. Untuk tiap berkas: baris tabel `| REQ-DD-DDD | … |`, blok detail
+`### REQ-…`, dan penanda `**Bukti**`.
+
+| Berkas | Baris tabel REQ | Blok detail `### REQ-` | Penanda `**Bukti**` |
+|---|---:|---:|---:|
+| A `jalur-a-keamanan-tenancy.md` | 34 | 34 | 31 |
+| B `jalur-b-kontrak-event.md` | 33 | 33 | 34 |
+| C `jalur-c-payment-logistics.md` | 73 | 73 | 69 |
+| D `jalur-d-ai-connector.md` | 80 | 80 | 80 |
+| E `jalur-e-frontend.md` | 66 | 40 | 40 |
+| E `jalur-e-frontend-04-bukti.md` | 0 | 26 | 26 |
+| F `jalur-f-operasional.md` | 23 | 23 | 23 |
+| **Total** | **309** | **309** | **303** |
+
+Berkas E terbelah dua: 40 blok REQ-03 di `jalur-e-frontend.md` + 26 blok REQ-04 di
+`jalur-e-frontend-04-bukti.md` = 66 blok untuk 66 baris tabel E (seluruh baris tabel ringkasan E tetap
+di `jalur-e-frontend.md`; berkas dok-04 hanya menampung blok bukti).
+
+**Setiap dari 309 temuan kini punya blok detail `### REQ-` yang bisa dijadikan tiket — 100% (309/309).**
+Diverifikasi dengan mencocokkan **HIMPUNAN ID** (bukan sekadar jumlah): 309 ID unik di baris tabel dan
+309 ID unik di judul blok detail (mengekstrak semua token `REQ-DD-DDD` per judul, termasuk blok gabungan
+"TERPENUHI ringkas" jalur C yang memuat 8 ID sekaligus) → **0 temuan tanpa blok**, **0 blok yatim**. Ini
+menutup utang §6 butir 2 (dulu 46 REQ jalur E tanpa blok) + 23 blok jalur C yang dulu hanya baris tabel =
+**69 celah bukti yang ditutup tiga agen** (jalur C: 23 · jalur E dok-03: 20 · jalur E dok-04: 26).
+
+**302/309 blok memuat penanda `**Bukti**` eksplisit.** Tujuh sisanya tidak memakai penanda itu, dan
+ketujuhnya **sah** (bukan celah bukti yang tersisa) — jadi tak ada ID yang perlu ditambal:
+
+- **5 TIDAK-TERVERIFIKASI** memakai "Yang dibutuhkan untuk memutuskan"; mustahil menyajikan bukti positif
+  untuk kelas yang justru berarti "belum dapat diputuskan": **REQ-05-004, REQ-05-009, REQ-05-011** (jalur A)
+  dan **REQ-17-007, REQ-17-043** (jalur C).
+- **REQ-17-060** (TERPENUHI) — bukti lewat rujukan silang eksplisit: "lihat REQ-17-004".
+- **REQ-17-001** (TERPENUHI) — bukti tercantum inline (`Bukti: …`) di blok gabungan "TERPENUHI ringkas"
+  bersama 7 REQ lain, bukan sebagai penanda `**Bukti**` tebal.
+
+(303 penanda = 302 blok ber-Bukti + satu blok jalur B yang memuat dua penanda `**Bukti**`.)
+
+Perintah yang dipakai:
+
+```powershell
+$files = @(
+  'docs/audit/2026-07-27/jalur-a-keamanan-tenancy.md','docs/audit/2026-07-29/jalur-b-kontrak-event.md',
+  'docs/audit/2026-07-29/jalur-c-payment-logistics.md','docs/audit/2026-07-29/jalur-d-ai-connector.md',
+  'docs/audit/2026-07-29/jalur-e-frontend.md','docs/audit/2026-07-29/jalur-e-frontend-04-bukti.md',
+  'docs/audit/2026-07-29/jalur-f-operasional.md'
+)
+# Per berkas: baris tabel, blok detail, penanda Bukti
+foreach ($f in $files) {
+  @(Select-String $f -Pattern '^\|\s*REQ-\d{2}-\d{3}\s*\|').Count   # baris tabel
+  @(Select-String $f -Pattern '^### REQ-').Count                     # blok detail
+  @(Select-String $f -Pattern '\*\*Bukti\*\*').Count                 # penanda Bukti
+}
+# Cocokkan himpunan ID: tiap baris tabel HARUS punya blok detail (E menembus dua berkas)
+$rowIds=[Collections.Generic.HashSet[string]]::new(); $blkIds=[Collections.Generic.HashSet[string]]::new()
+foreach ($f in $files) {
+  foreach ($m in Select-String $f -Pattern '^\|\s*(REQ-\d{2}-\d{3})\s*\|') { [void]$rowIds.Add($m.Matches[0].Groups[1].Value) }
+  foreach ($m in Select-String $f -Pattern '^### ') { foreach ($id in [regex]::Matches($m.Line,'REQ-\d{2}-\d{3}')) { [void]$blkIds.Add($id.Value) } }
+}
+@($rowIds | Where-Object { -not $blkIds.Contains($_) }).Count   # → 0 temuan tanpa blok
+@($blkIds | Where-Object { -not $rowIds.Contains($_) }).Count   # → 0 blok yatim
+```
 
 ---
 
@@ -376,10 +468,10 @@ terpenuhi + terpanggil di produksi"). Dilampirkan juga rasio **"ada dalam bentuk
 |---|---|---:|---:|---|
 | Skema DB & kontrak (**85–90%**) | 05 + 06 + 07 | 17/45 = **38%** | 34/45 = 76% | **SALAH** sebagai kelengkapan; hanya benar sebagai "shape terdraf" |
 | Backend runtime (**55–65%**) | 10_SECURITY | 9/22 = **41%** | 17/22 = 77% | **TERLALU OPTIMIS**; ketat 41% |
-| Payment & logistics (**~50%**) | 17 | 24/73 = **33%** | 61/73 = 84% | **SALAH** (terlalu tinggi); ketat 33% |
+| Payment & logistics (**~50%**) | 17 | 23/73 = **32%** | 61/73 = 84% | **SALAH** (terlalu tinggi); ketat 32% |
 | Observability (**~40%**) | 02 saja (11/12/13 belum diaudit) | 9/23 = **39%** | 17/23 = 74% | **TAK BISA DIVERIFIKASI penuh**; doc 02 kebetulan ≈39% |
 | AI safety & policy (**~35%**) | 08 + 09 | 14/80 = **18%** | 62/80 = 78% | **SALAH** sebagai kematangan produksi; ketat 18% |
-| Frontend (**25–30%**) | 03 + 04 | 1/66 = **2%** | 54/66 = 82% | **SALAH** sebagai kelengkapan; hanya benar sebagai "scaffold luas" |
+| Frontend (**25–30%**) | 03 + 04 | 1/66 = **2%** | 55/66 = 83% | **SALAH** sebagai kelengkapan; hanya benar sebagai "scaffold luas" |
 
 **Kesimpulan tegas:**
 
@@ -405,11 +497,11 @@ terpenuhi + terpanggil di produksi"). Dilampirkan juga rasio **"ada dalam bentuk
    izin" **tidak dilanggar** (risiko = kapabilitas belum dibangun, bukan lubang aktif).
 
 4. **Klaim "Frontend 25–30%" salah sebagai kelengkapan (ketat 2%), tetapi arah rankingnya benar**
-   (frontend memang lapisan paling belum matang). 53/66 REQ frontend berstatus SEBAGIAN (scaffold ada,
-   isi mock/hardcoded), 11 HILANG (halaman belum dibangun), dan **1 BERTENTANGAN** (aksi destruktif
+   (frontend memang lapisan paling belum matang). 54/66 REQ frontend berstatus SEBAGIAN (scaffold ada,
+   isi mock/hardcoded), 10 HILANG (halaman belum dibangun), dan **1 BERTENTANGAN** (aksi destruktif
    satu-klik tanpa konfirmasi — REQ-03-035).
 
-5. **Klaim "Payment & logistics ~50%" terlalu tinggi (ketat 33%)** — konsisten dengan perhitungan
+5. **Klaim "Payment & logistics ~50%" terlalu tinggi (ketat 32%)** — konsisten dengan perhitungan
    independen Jalur C. Fondasi uang/status/UNKNOWN kuat; utang ada pada katalog event, proyeksi
    on-PAID, rekonsiliasi mismatch, exception/PoD, dan penyambungan ownership-lookup.
 
@@ -538,7 +630,8 @@ Lihat §6. Tanpa menutupnya, klaim "kalau daftar ini habis tak ada lagi yang kur
 
 ## 6. Utang cakupan audit — jujur tentang apa yang belum ditelusuri
 
-Konsolidasi ini menemukan bahwa **audit itu sendiri belum lengkap** di dua tempat. Dicatat eksplisit
+Konsolidasi ini menemukan bahwa **audit itu sendiri belum lengkap** di dua tempat; satu di antaranya —
+blok temuan Jalur E (butir 2) — **kini sudah ditutup**. Dicatat eksplisit
 sesuai aturan rencana §2 butir 6 dan DoD §8.
 
 1. **Jalur F hanya mengaudit dokumen 02 (`02_SYSTEM_ARCHITECTURE`).** Perintah `Select-String -Pattern
@@ -549,17 +642,17 @@ sesuai aturan rencana §2 butir 6 dan DoD §8.
    backup/RPO belum punya temuan berbukti selain yang tersinggung di doc 02. **Lapisan "observability"
    pada §3 hanya terukur dari doc 02.**
 
-2. **Blok temuan Jalur E tidak lengkap.** Tabel Ringkasan memuat seluruh 66 REQ (03: 40, 04: 26), tetapi
-   **blok per-temuan hanya ada untuk REQ-03-001…020**; **REQ-03-021…040 dan seluruh REQ-04-***
-   (46 REQ) punya klasifikasi + severity di tabel tetapi **tanpa blok "Yang kurang"** yang bisa dijadikan
-   tiket. Klasifikasinya terhitung di §1–§2 (itu ground truth tabel), tetapi 46 di antaranya belum punya
-   bukti path:baris terinci.
+2. **Blok temuan Jalur E — DITUTUP (2026-07-29).** Dulu blok per-temuan hanya ada untuk REQ-03-001…020.
+   Kini **REQ-03-021…040** (20 blok, di `jalur-e-frontend.md`) dan **seluruh REQ-04-001…026** (26 blok, di
+   berkas baru `jalur-e-frontend-04-bukti.md`) sudah punya blok berbukti `path:baris`. Bersama 23 blok
+   jalur C, ini menutup 69 celah bukti. Verifikasi hitung ulang: **309/309 temuan berblok** — lihat
+   **§ Status kelengkapan bukti**.
 
 3. **Butir pra-isi §5 rencana yang belum diverifikasi ulang tahun ini:** K-09 (5 modul di skema `public`),
    K-11 (nomor migrasi berlubang), K-12 (tes `@chai/domain` flaky). Lihat §7.
 
-**Untuk menutup utang ini:** audit dokumen 11/12/13 (jalur F), lengkapi blok temuan REQ-03-021…040 +
-REQ-04-*, dan re-verifikasi K-09/K-11/K-12.
+**Untuk menutup sisa utang ini:** audit dokumen 11/12/13 (jalur F) dan re-verifikasi K-09/K-11/K-12.
+(Blok temuan REQ-03-021…040 + REQ-04-* sudah dilengkapi — lihat § Status kelengkapan bukti.)
 
 ---
 

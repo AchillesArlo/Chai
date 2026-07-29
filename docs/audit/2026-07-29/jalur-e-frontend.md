@@ -427,3 +427,306 @@ agar tidak diulang tiap blok:
 **Yang kurang**: kolom konteks pelanggan; tombol Take Over/Assign/Resolve/Escalate/Pause-Resume AI + AI evidence; composer attachment/template/internal-note/suggested-reply/channel-window-warning.
 
 ---
+
+
+### REQ-03-021 - Customer 360: tabs, PII masked by role, merge manager/admin-only - SEBAGIAN - MEDIUM
+
+**Persyaratan** (`03_UX_UI §6.5`): "Tabs: Overview; Conversations; Lead activities; Bookings; Orders; Payments; Shipments; Notes; Data/privacy. PII fields masked based on role. Merge/unmerge is manager/admin only."
+
+**Kondisi nyata**: Yang dirender hanya daftar kontak datar di `/customers` (ter-wire `/client/v1/contact-segments`), bukan halaman Customer 360 ber-tab di rute detail (`/contacts/:id` tak ada). Daftar itu menampilkan PII **tanpa masking** (telepon + email polos) untuk semua peran, tak ada 9 tab, dan tak ada aksi merge/unmerge.
+
+**Bukti**:
+- `apps/client-portal/src/app/customers/page.tsx:75-77` - item daftar: segment badge + `{cust.phone} • {cust.email}` polos (bukan halaman ber-tab, PII tak di-mask per-peran)
+- glob `apps/client-portal/src/app/**/[*]/**` → hanya `api/[...path]/route.ts` (tak ada `/contacts/:id` maupun `/customers/:id`)
+- Perintah: `Select-String -Path apps/client-portal/src -Pattern 'mask|unmerge|\bmerge\b'` → 2 hasil, keduanya tak relevan (`settings/page.tsx:534` label guardrail "PII Masking" untuk LLM; `unified-inbox.tsx:101` komentar `ponytail:`) — tak ada masking field UI maupun tooling merge
+
+**Yang kurang**: halaman Customer 360 ber-tab di rute detail; masking PII per-peran pada telepon/email; aksi merge/unmerge khusus manager/admin.
+
+---
+
+### REQ-03-022 - Lead Pipeline: kanban/table/funnel, drag confirm bila automation trigger - SEBAGIAN - LOW
+
+**Persyaratan** (`03_UX_UI §6.6`): "Views: Kanban by stage; table; funnel report. Card: contact/company; source; score and explanation; owner; next action; last activity; SLA/age. Drag stage requires confirmation if automation will trigger."
+
+**Kondisi nyata**: Hanya Kanban-by-stage yang dirender (kolom per `STAGE_ORDER`, ter-wire `/client/v1/leads`). Tak ada tampilan table maupun funnel report. Tak ada drag-and-drop sama sekali (kolom statis), sehingga "drag stage requires confirmation" tak berlaku. Kartu hanya menampilkan `contactId`, status, dan score — tanpa source, score explanation, owner, next action, last activity, atau SLA/age.
+
+**Bukti**:
+- `apps/client-portal/src/app/leads/page.tsx:17` - `STAGE_ORDER`; kolom Kanban dirender via `stages.map(...)`
+- `apps/client-portal/src/app/leads/page.tsx:82` - kartu = contactId + status + `Score {lead.score}` saja
+- Perintah: `Select-String -Path apps/client-portal/src -Pattern 'onDrag|draggable|DndContext|funnel'` → 0 hasil
+
+**Yang kurang**: tampilan table + funnel report; drag-and-drop antar-stage dengan konfirmasi bila memicu automation; kolom kartu source/score-explanation/owner/next-action/last-activity/SLA.
+
+---
+
+### REQ-03-023 - Lead Detail: AI-generated field ditandai & bisa confirm/correct - HILANG - LOW
+
+**Persyaratan** (`03_UX_UI §6.7`): "AI-generated field is visually marked and can be confirmed/corrected."
+
+**Kondisi nyata**: Tidak ada rute `/leads/:id` maupun komponen Lead Detail. Kanban leads (REQ-03-022) tak menautkan ke detail apa pun, jadi tak ada permukaan tempat field hasil-AI ditandai/dikonfirmasi.
+
+**Bukti**:
+- glob `apps/client-portal/src/app/**/[*]/**` → hanya `api/[...path]/route.ts` (nol segmen `:id` untuk leads); inventaris 13 `page.tsx` tak memuat leads detail
+- Perintah: `Select-String -Path apps/client-portal/src -Pattern 'AI-generated|confirmCorrect|leads/\['` → 0 hasil
+
+**Yang kurang**: halaman `/leads/:id` dengan penanda field hasil-AI dan aksi confirm/correct (TIDAK ADA).
+
+---
+
+### REQ-03-024 - Knowledge: list/detail, published vs draft dipisah jelas - SEBAGIAN - LOW
+
+**Persyaratan** (`03_UX_UI §6.8`): "List: source name/type; status; version; freshness; documents/chunks; last sync; usage; error. Source detail: ingestion timeline; ... test query panel; publish/rollback. Published and draft are clearly separated."
+
+**Kondisi nyata**: Yang dirender hanya daftar dokumen ter-index (`/client/v1/knowledge/documents`) + kotak upload. Item hanya menampilkan excerpt teks + `knowledgeBaseId` + jumlah chunk — tanpa kolom status/version/freshness/last-sync/usage/error. Tak ada pemisahan published vs draft, tak ada source detail (`/knowledge/:id` tak ada), tak ada test-query panel maupun publish/rollback.
+
+**Bukti**:
+- `apps/client-portal/src/app/knowledge/page.tsx:73-74` - item daftar: `excerpt(doc.text)` + `{doc.knowledgeBaseId} • {N} vector chunks` (tanpa status/version/freshness)
+- glob `apps/client-portal/src/app/**/[*]/**` → tak ada `/knowledge/:id`
+- Perintah: `Select-String -Path apps/client-portal/src -Pattern 'draft|published|rollback'` → hanya `client-home.tsx:39` (label KPI "AI used published knowledge"); nol di halaman knowledge
+
+**Yang kurang**: kolom status/version/freshness/last-sync/usage/error; pemisahan published/draft; source detail dengan ingestion timeline, test-query panel, dan publish/rollback.
+
+---
+
+### REQ-03-025 - Bookings: calendar/list/resource, timezone saat berbeda - SEBAGIAN - LOW
+
+**Persyaratan** (`03_UX_UI §6.9`): "Views: calendar; list; resource view. Actions: create; reschedule; cancel; mark completed/no-show; send reminder. All time displays show timezone when customer/resource differ."
+
+**Kondisi nyata**: Hanya tampilan list yang dirender (ter-wire `/client/v1/appointments`); tak ada calendar grid maupun resource view (`resourceId` ada di tipe data tetapi tak dirender sebagai view). Satu-satunya aksi adalah tombol "New Booking" tanpa handler. Waktu ditampilkan sebagai string ISO mentah tanpa zona waktu/locale — tak ada penanganan "timezone when customer/resource differ".
+
+**Bukti**:
+- `apps/client-portal/src/app/bookings/page.tsx:45` - hanya tombol "New Booking" (tanpa reschedule/cancel/complete/no-show/reminder)
+- `apps/client-portal/src/app/bookings/page.tsx:66` - waktu = `<time dateTime={booking.startsAt}>{booking.startsAt}</time>` (ISO mentah, tanpa timezone/locale)
+- `apps/client-portal/src/app/bookings/page.tsx:12` - `resourceId` hanya field tipe; tak ada resource view
+
+**Yang kurang**: tampilan calendar & resource; aksi reschedule/cancel/complete/no-show/reminder; tampilan zona waktu saat customer/resource berbeda.
+
+---
+
+### REQ-03-026 - Commerce: read-first, mutation hanya bila capability + approval - SEBAGIAN - MEDIUM
+
+**Persyaratan** (`03_UX_UI §6.10`): "Read-first views: product search; inventory freshness; order lookup; fulfillment status; connector health. Mutation buttons only appear if connector capability and approval policy allow."
+
+**Kondisi nyata**: Hanya katalog produk statis (`PRODUCTS_DATA` hardcoded, X-1) yang dirender — tanpa product search, inventory freshness, order lookup, fulfillment status, atau connector health. Tombol mutasi "Add Product" selalu tampil tanpa cek capability/approval, bertentangan dengan "mutation buttons only appear if connector capability and approval policy allow".
+
+**Bukti**:
+- `apps/client-portal/src/app/commerce/page.tsx:16` - `PRODUCTS_DATA` hardcoded (tak ada API, X-1)
+- `apps/client-portal/src/app/commerce/page.tsx:42` - tombol "Add Product" dirender tanpa gerbang capability/approval
+- `apps/client-portal/src/app/commerce/page.tsx:47` - daftar hanya katalog produk (tanpa order lookup/fulfillment/connector-health)
+
+**Yang kurang**: view read-first (product search/inventory-freshness/order-lookup/fulfillment/connector-health) ter-wire API; gerbang capability + approval sebelum tombol mutasi muncul.
+
+---
+
+### REQ-03-027 - Payments UI: nav hidden saat disabled, no card/CVV/OTP, redirect≠Paid, copy beda - SEBAGIAN - MEDIUM
+
+**Persyaratan** (`03_UX_UI §6.10A`): "Navigation is hidden when `payment_orchestration` is disabled. ... The UI never asks for card number, CVV, PIN, OTP, or bank-login credentials. `Link sent`, `Processing`, and `Paid` use different status/copy. Redirect success and customer screenshot cannot render a Paid badge."
+
+**Kondisi nyata**: Daftar checkout session dirender via API dengan `MoneyAmount` (minor units). Kepatuhan tercapai sebagian: UI **tidak** meminta card/CVV/OTP/PIN (dikonfirmasi pencarian nol), dan badge status dibaca dari `payment.status` server sehingga redirect/screenshot tak bisa memaksa Paid. Namun navigasi `/payments` **tidak** disembunyikan saat kapabilitas mati (nav statis, X-4); tak ada overview (paid value/conversion/health); kolom daftar tak memuat customer/provider/merchant/reconciliation; tak ada detail `/payments/:id`.
+
+**Bukti**:
+- `apps/client-portal/src/app/payments/page.tsx:68` - `MoneyAmount` (minor units); `:16` `statusTone` memetakan PAID/PENDING/lainnya; badge dari `payment.status` API (redirect tak memaksa Paid)
+- `apps/client-portal/src/config/navigation.ts:10` - `/payments` statis, tanpa gating kapabilitas (bandingkan §6.10A "hidden when disabled")
+- Perintah: `Select-String -Path apps/client-portal/src -Pattern 'CVV|card number|\bOTP\b|\bPIN\b|bank-login'` → 0 hasil (patuh: UI tak minta data kartu)
+- glob `apps/client-portal/src/app/**/[*]/**` → tak ada `/payments/:id`
+
+**Yang kurang**: sembunyikan nav saat `payment_orchestration` mati; overview + provider/webhook/reconciliation health; kolom customer/provider/merchant/reconciliation; halaman detail `/payments/:id`; copy khusus untuk `Link sent`/`Processing`/`Paid`.
+
+---
+
+### REQ-03-028 - Shipments & Exceptions: nav hidden saat disabled, canonical state, identity-auth - SEBAGIAN - MEDIUM
+
+**Persyaratan** (`03_UX_UI §6.10B`): "Navigation is hidden when `shipment_tracking` is disabled. ... active shipments by canonical status; ... filters for provider, store, carrier, state, exception, age, and owner. ... Customer-facing tracking shows only identity-authorized data."
+
+**Kondisi nyata**: Hanya `EventTimeline` berisi shipment (trackingNumber — status) dirender via API, dengan `statusTone` yang mengenali canonical status + STALE/EXCEPTION/UNKNOWN. Namun navigasi `/shipments` tak disembunyikan saat kapabilitas mati (nav statis, X-4); tak ada hitungan per canonical status, tak ada filter, tak ada detail `/shipments/:id`, tak ada queue `/shipment-exceptions`, tak ada penanda source/freshness/ETA, tak ada penegakan identity-auth.
+
+**Bukti**:
+- `apps/client-portal/src/app/shipments/page.tsx:15` - `statusTone` canonical (DELIVERED/IN_TRANSIT/…) + STALE/EXCEPTION/UNKNOWN; `:67` `EventTimeline` dirender via API
+- `apps/client-portal/src/config/navigation.ts:11` - `/shipments` statis, tanpa gating kapabilitas
+- glob `apps/client-portal/src/app/**/[*]/**` → tak ada `/shipments/:id`; direktori app tak punya folder `shipment-exceptions`
+- Perintah: `Select-String -Path apps/client-portal/src/app/shipments/page.tsx -Pattern 'freshness|reconcile|proof|resolve|assign|\bETA\b|source'` → 0 hasil
+
+**Yang kurang**: sembunyikan nav saat `shipment_tracking` mati; hitungan canonical + filter; detail `/shipments/:id`; queue `/shipment-exceptions`; penanda source/freshness/ETA; penegakan identity-auth pada tracking.
+
+---
+
+### REQ-03-029 - Automations client: template view, tanpa edit raw graph di MVP - HILANG - LOW
+
+**Persyaratan** (`03_UX_UI §6.11`): "MVP client view: available templates; enabled/disabled; safe parameters; recent runs; failures; pause. Client does not edit raw workflow graph on MVP."
+
+**Kondisi nyata**: Tidak ada rute `/automations` di client-portal. Katalog navigasi klien pun tak memuat Automations (padahal §3.2 mencantumkannya).
+
+**Bukti**:
+- glob `apps/client-portal/src/app/**/automations/**` → 0 hasil; inventaris 13 `page.tsx` tak memuat automations
+- `apps/client-portal/src/config/navigation.ts:5-16` - 12 item nav; tak ada entri Automations
+- Perintah: `Select-String -Path apps/client-portal/src -Pattern 'automations|raw workflow|workflow graph'` → 0 hasil
+
+**Yang kurang**: halaman `/automations` klien (available templates, enable/disable, safe parameters, recent runs, failures, pause) tanpa editor raw graph (TIDAK ADA).
+
+---
+
+### REQ-03-030 - Analytics: tab + setiap metric definition/tz/comparison/freshness/export - SEBAGIAN - LOW
+
+**Persyaratan** (`03_UX_UI §6.12`): "Tabs: Service; Sales; Bookings; AI Quality; Channels; Agents; Usage. Every metric supports: definition tooltip; date/timezone; current vs comparison; filters; freshness; export permission."
+
+**Kondisi nyata**: Ada 7 tab yang dirender, tetapi namanya berbeda dari spec (overview/messages/ai/sla/revenue/logistics/csat vs Service/Sales/Bookings/AI-Quality/Channels/Agents/Usage). Metrik semata memakai `MetricCard`, yang dari 6 dukungan wajib hanya punya freshness — tanpa definition tooltip, date/timezone, current-vs-comparison, filters, atau export.
+
+**Bukti**:
+- `apps/client-portal/src/client-analytics.tsx` - `AnalyticsTab = 'overview'|'messages'|'ai'|'sla'|'revenue'|'logistics'|'csat'`; tiap tab merender `MetricCard`
+- `packages/ui/src/operational.tsx:3-31` - `MetricCard` hanya `label`/`value`/`trend?`/`freshness`; tanpa prop definition/tz/comparison/filter/export
+
+**Yang kurang**: dari 6 dukungan metrik hanya freshness ada; tambahkan definition tooltip, date/timezone, current-vs-comparison, filters, dan export; selaraskan nama tab dengan §6.12.
+
+---
+
+### REQ-03-031 - Team & Settings - SEBAGIAN - LOW
+
+**Persyaratan** (`03_UX_UI §6.13`): "Team: invite; role; queue membership; status; last active; revoke. Settings: business profile; business hours; brand/tone; escalation; consent; fields; notifications; guarded AI settings; channel state."
+
+**Kondisi nyata**: Team merender daftar members + pending invitations via `/client/v1/team`, tetapi tanpa aksi invite, edit role, queue membership, last active, maupun revoke (read-only). Settings punya 4 tab (channels/api/profile/guardrails) tetapi menyimpan ke `localStorage`, bukan API; hilang business hours, brand/tone, escalation, consent, fields, dan notifications.
+
+**Bukti**:
+- `apps/client-portal/src/team-management.tsx:20-24` - fetch `/client/v1/team`; render members + invitations (read-only, tanpa tombol invite/role/revoke)
+- `apps/client-portal/src/app/settings/page.tsx:73-84` - `handleSaveSettings` menulis `localStorage.setItem('chai_client_settings', …)` (bukan API)
+- `apps/client-portal/src/app/settings/page.tsx:19` - hanya 4 tab (`'profile'|'channels'|'api'|'guardrails'`)
+
+**Yang kurang**: aksi Team (invite/role/queue-membership/last-active/revoke); Settings persist ke API + seksi business-hours/brand-tone/escalation/consent/fields/notifications.
+
+---
+
+### REQ-03-032 - Hosted payment link flow (6 langkah §7.4) - SEBAGIAN - MEDIUM
+
+**Persyaratan** (`03_UX_UI §7.4`): "1 Show authoritative amount, currency, purpose, merchant, expiry. 2 Require confirmation or approval according to risk policy. 3 Create/send the provider-hosted link once using an idempotency key. 4 Show `Waiting for payment` while provider evidence is absent. 5 Update to `Paid` only after verified webhook/query... 6 If status is stale/uncertain, show reconcile/handover instead of success."
+
+**Kondisi nyata**: Halaman payments hanya menampilkan sesi yang sudah ada — amount (`MoneyAmount`, minor units), currency, expiry, dan status server. Ini memenuhi langkah 1 sebagian (tanpa purpose/merchant) dan menampilkan status secara pasif (langkah 5). Tak ada alur create di UI: tanpa langkah confirmation/approval, tanpa pembuatan link ber-idempotency-key, tanpa state khusus "Waiting for payment", dan tanpa aksi reconcile/handover saat stale.
+
+**Bukti**:
+- `apps/client-portal/src/app/payments/page.tsx:68` - `MoneyAmount` (amount/currency); daftar hanya menampilkan status/expiry/checkout link
+- `packages/ui/src/money-and-timeline.tsx:38-56` - `formatMoneyMinor` menjaga minor units tanpa aritmetika float (uang authoritative)
+- Perintah: `Select-String -Path apps/client-portal/src/app/payments/page.tsx -Pattern 'Waiting for payment|reconcile|handover|idempot|approval|purpose|merchant'` → 0 hasil
+
+**Yang kurang**: alur create 6-langkah (konfirmasi/approval per risk; create link sekali ber-idempotency-key; state "Waiting for payment"; reconcile/handover saat stale) — plus purpose/merchant pada tampilan.
+
+---
+
+### REQ-03-033 - Shipment tracking & exception flow (5 langkah §7.5) - SEBAGIAN - MEDIUM
+
+**Persyaratan** (`03_UX_UI §7.5`): "1 Verify customer/order ownership or authorized client session. 2 Show canonical current state, last provider event, source, and freshness. 3 Render the immutable timeline and provider ETA only when supplied. 4 For stale/failed/lost/damaged/return state, create an exception and surface contact/escalation actions. 5 Do not promise a new ETA unless the source provides it."
+
+**Kondisi nyata**: Halaman shipments memenuhi sebagian langkah 2-3: menampilkan canonical state + last event lewat `EventTimeline` (urut per `lastSyncedAt`), dan tak mengarang ETA (memang tak ada ETA sama sekali). Namun tak ada verifikasi ownership (langkah 1), tak ada penanda source/freshness (langkah 2), dan tak ada pembuatan exception + aksi contact/escalation untuk state stale/failed/lost (langkah 4).
+
+**Bukti**:
+- `apps/client-portal/src/app/shipments/page.tsx:67` - `EventTimeline` dirender via API; `:37-45` entri diurutkan per `lastSyncedAt` (last event)
+- `apps/client-portal/src/app/shipments/page.tsx:15` - `statusTone` canonical + STALE/EXCEPTION
+- Perintah: `Select-String -Path apps/client-portal/src/app/shipments/page.tsx -Pattern 'freshness|reconcile|proof|resolve|assign|\bETA\b|source'` → 0 hasil (tak ada source/freshness/ETA/aksi exception)
+
+**Yang kurang**: verifikasi ownership/authorized session; penanda source + freshness; pembuatan exception + aksi contact/escalation untuk state stale/failed/lost/damaged/return.
+
+---
+
+### REQ-03-034 - Global UI States: 10 state di setiap data surface (§8) - SEBAGIAN - MEDIUM
+
+**Persyaratan** (`03_UX_UI §8`): "Every data surface defines" 10 state — Loading, Empty-first-use, Empty-filter, Partial, Stale, Error-retryable, Error-permission, Offline, Saving, Success.
+
+**Kondisi nyata**: Komponen state tersedia dan sebagian benar-benar dirender: `PageState` (loading/empty/error) ter-wire di route-level `loading.tsx`/`error.tsx` untuk beberapa rute, dan `SavingIndicator` dipakai di inbox. Namun tiga komponen state **hanya didefinisikan, nol render**: `DataStateBanner` (partial/stale), `OfflineNotice` (offline), `SavingOverlay`. Dua state — **Empty-filter** dan **Error-permission** — tak punya implementasi sama sekali. Selain itu, sebagian besar halaman data (customers/leads/bookings/knowledge/team/payments) memakai div ad-hoc "Loading…"/"Failed to load", bukan sistem state — jadi 10-state contract tak berlaku "di setiap data surface".
+
+**Bukti**:
+- `packages/ui/src/page-state.tsx` - `PageState` hanya loading/empty/error (+correlationId, retry); dipakai di `apps/client-portal/src/app/{analytics,customers,inbox}/{loading,error}.tsx` dan `apps/owner-console/src/app/{automation,marketplace/webhooks,whitelabel}/…`
+- `apps/client-portal/src/unified-inbox.tsx:338` - `SavingIndicator` (saving/saved) dipakai (satu-satunya render state Saving/Success)
+- Perintah: `Select-String -Path apps -Pattern 'DataStateBanner|OfflineNotice|SavingOverlay'` → 0 hasil (didefinisikan di `packages/ui`, nol call-site di aplikasi)
+- `apps/client-portal/src/app/customers/page.tsx:60-63` - contoh state ad-hoc ("Loading customers…"/"Failed to load"), bukan sistem state
+
+**Yang kurang**: render `DataStateBanner` (partial/stale) & `OfflineNotice` di surface data; implementasi state Empty-filter & Error-permission; terapkan 10-state contract konsisten di setiap halaman (ganti div ad-hoc).
+
+---
+
+### REQ-03-035 - Confirmation patterns per risk + never color-alone - BERTENTANGAN - HIGH
+
+**Persyaratan** (`03_UX_UI §9`): "High → Re-auth/approval plus typed confirmation where destructive. Critical → Two-person approval or Founder re-auth. Never use color alone to communicate risk."
+
+**Kondisi nyata**: Aksi destruktif berisiko tinggi dieksekusi satu klik **tanpa** konfirmasi, re-auth, maupun typed-confirmation: circuit breaker AI klien, kill switch provider (→ SHUTDOWN), dan suspend tenant semuanya hanya men-toggle state lokal. Ini melanggar pola High/Critical §9. (Aturan "never color alone" sendiri dipatuhi: `StatusBadge` selalu menyertakan ikon + teks label.)
+
+**Bukti**:
+- `apps/owner-console/src/owner-overview.tsx:150-153` - tombol circuit breaker: `onClick={() => { setAiCircuitBreaker((prev) => !prev); … }}` (satu klik, tanpa konfirmasi/re-auth)
+- `apps/owner-console/src/app/marketplace/page.tsx:106,176` - `toggleKillSwitch` di-invoke `onClick={() => toggleKillSwitch(p.id)}` (provider → SHUTDOWN tanpa dialog)
+- `apps/owner-console/src/tenants-overview.tsx:83-92` - suspend = toggle state lokal tanpa dialog (lihat REQ-03-008, X-3)
+- `packages/ui/src/operational.tsx:76-93` - `StatusBadge` selalu ikon + teks (bukan warna semata) — bagian "never color alone" terpenuhi
+- Perintah: `Select-String -Path apps/owner-console/src -Pattern 'typed confirmation|re-auth|two-person|confirm\('` → hanya "Request Approval"/`PENDING_APPROVAL` pada publish automation; nol pada aksi destruktif
+
+**Yang kurang**: gerbang konfirmasi per tier risiko — dialog + typed-confirmation/re-auth untuk High, two-person/founder re-auth untuk Critical — pada circuit breaker, kill switch, dan suspend.
+
+---
+
+### REQ-03-036 - Notifications: security/owner-critical tak bisa dinonaktifkan - SEBAGIAN - LOW
+
+**Persyaratan** (`03_UX_UI §10`): "Users control non-critical notifications; security and owner-critical alerts cannot be fully disabled."
+
+**Kondisi nyata**: Ada notification center yang dirender (`AppShell`) dengan daftar + "Mark all read", tetapi datanya `MOCK_NOTIFICATIONS` hardcoded (X-1). Tak ada UI kontrol preferensi notifikasi sama sekali, dan tak ada kategorisasi security/owner-critical sebagai tak-bisa-dinonaktifkan.
+
+**Bukti**:
+- `packages/ui/src/app-shell.tsx:66-70` - `MOCK_NOTIFICATIONS` hardcoded; dropdown hanya render daftar + "Mark all read"
+- Perintah: `Select-String -Path apps -Pattern 'notification.*preference|preferences|cannot be disabled|owner-critical'` → 0 hasil
+
+**Yang kurang**: UI preferensi notifikasi (kontrol non-critical) + penandaan kategori security/owner-critical yang tak dapat dinonaktifkan; wiring data notifikasi ke API.
+
+---
+
+### REQ-03-037 - Search permission-aware, tak bocorkan eksistensi luar scope, tracking≠bypass identity - SEBAGIAN - MEDIUM
+
+**Persyaratan** (`03_UX_UI §11`): "Global search is permission-aware. Owner searches tenant/channel/incident/correlation ID; Client searches contact/conversation/lead/booking/order. Payment and shipment search is tenant/permission-aware; tracking reference alone never bypasses identity. Search result never reveals object existence outside current scope."
+
+**Kondisi nyata**: Ada modal Quick Search yang dirender, tetapi hanya menyaring **item navigasi** berdasarkan label (`navigation.filter(...)`) — bukan pencarian entitas. Tak mencari tenant/contact/conversation/lead/booking/order; tak permission-aware terhadap data; tak ada pencarian tracking reference. Karena hanya menyaring label nav, tak ada kebocoran eksistensi objek, tetapi juga bukan pencarian yang disyaratkan.
+
+**Bukti**:
+- `packages/ui/src/app-shell.tsx:141-143` - `filteredSearchItems = navigation.filter((item) => item.label.toLowerCase().includes(searchQuery…))`
+- `packages/ui/src/app-shell.tsx` (modal Quick Search) - hanya render "Navigation Links" hasil filter label; tak ada query entitas/API
+
+**Yang kurang**: pencarian entitas per-surface (tenant/channel/incident vs contact/conversation/lead/booking/order) yang permission-aware; pencarian payment/shipment yang tak mem-bypass identity via tracking reference.
+
+---
+
+### REQ-03-038 - Accessibility WCAG 2.2 AA (§12) - SEBAGIAN - MEDIUM
+
+**Persyaratan** (`03_UX_UI §12`): antara lain "Keyboard-complete navigation for inbox and tables; Visible focus ring; Semantic heading order; Labels for all inputs; Live region for message arrival and save status; Chart data table alternative; Minimum touch target 44×44 px; Contrast ≥4.5:1; Reduced motion respected; Captions/transcript for audio."
+
+**Kondisi nyata**: Sebagian terpenuhi: focus ring terlihat (`focus-visible:outline-2`), target sentuh 44px (`min-h-11`/`size-11`), live region untuk status (aria-live pada `PageState`, `SavingIndicator`, `OfflineNotice`), reduced motion (`motion-reduce:animate-none`), urutan heading semantik (h1/h2/h3), dan aria-label pada tombol ikon. Namun: `Chart` **tak menyediakan data-table alternative** (dan `Chart` bahkan tak dirender di rute mana pun); sebagian input hanya `placeholder` tanpa `<label>` (mis. input search); captions/transcript audio tak ada; kontras & keyboard-complete tables tak dapat diverifikasi statis.
+
+**Bukti**:
+- `packages/ui/src/app-shell.tsx:44-49` - `focus-visible:outline-2` + `min-h-11` (focus ring + touch target 44px)
+- `packages/ui/src/page-state.tsx:16-20` - `role="status"`/`aria-live`; `:100` `motion-reduce:animate-none`
+- `packages/ui/src/chart.tsx:44-52` - SVG `role="img"` + aria-label, tetapi tanpa tabel data alternatif
+- Perintah: `Select-String -Path apps -Pattern '<Chart|LineChart|BarChart'` → hanya ikon `BarChart3` di `navigation.ts` (komponen `Chart` nol render)
+
+**Yang kurang**: data-table alternative untuk chart (dan penggunaan chart yang sebenarnya); `<label>` eksplisit untuk semua input; captions/transcript audio; verifikasi kontras & keyboard-complete pada tabel/inbox.
+
+---
+
+### REQ-03-039 - Localization: string externalized, locale date, UTC store, relative+absolute - SEBAGIAN - LOW
+
+**Persyaratan** (`03_UX_UI §13`): "UI strings externalized. Dates use tenant locale; timestamps store UTC. Relative time always has absolute tooltip. Numbers/currency use locale. Copy avoids unexplained English jargon in Indonesian UI."
+
+**Kondisi nyata**: Hanya currency yang locale-aware (`MoneyAmount`/`formatMoneyMinor` via `Intl.NumberFormat`). String UI **tidak** di-externalize — tak ada framework i18n; teks di-hardcode inline dan bercampur Inggris + Indonesia. Tanggal di client-portal ditampilkan sebagai ISO mentah (`<time>{...}</time>`) tanpa format locale dan tanpa tooltip relative+absolute.
+
+**Bukti**:
+- `packages/ui/src/money-and-timeline.tsx:38-56` - `formatMoneyMinor` memakai `Intl.NumberFormat(locale, { style:'currency' })` (currency locale-aware)
+- Perintah: `Select-String -Path apps -Pattern 'next-intl|i18next|useTranslation|react-intl|FormattedMessage|formatRelative'` → 0 hasil (string tak di-externalize; tak ada relative-time util)
+- `apps/owner-console/src/app/logistics/page.tsx:92,137` - satu-satunya `toLocaleDateString()`; client-portal memakai ISO mentah (mis. `payments/page.tsx` expiry, `bookings/page.tsx:66`)
+
+**Yang kurang**: externalisasi string (i18n) + audit jargon Inggris di UI Indonesia; format tanggal per locale; tooltip absolut untuk waktu relatif.
+
+---
+
+### REQ-03-040 - UX Acceptance Checklist 12 butir (§14) - SEBAGIAN - MEDIUM
+
+**Persyaratan** (`03_UX_UI §14`): 12 butir — route in permission matrix; loading/empty/error/partial states; primary action clear; destructive actions show impact; freshness for external/analytical data; payment status distinguishes requested/processing/verified-paid/expired/refunded; shipment timeline exposes source/freshness/exception tanpa mengarang ETA; mobile critical path tested; keyboard path tested; analytics has definitions; AI-generated content identified; owner-only controls never render for client.
+
+**Kondisi nyata**: Checklist terpenuhi sebagian. Yang ada: freshness pada `MetricCard`; mobile nav; focus ring; pemisahan surface owner/client via prop `surface`. Yang **gagal/parsial**: destructive actions tak menampilkan impact (REQ-03-035, BERTENTANGAN); state loading/empty/error/partial tak konsisten di semua surface (REQ-03-034); analytics tanpa definitions (REQ-03-030); AI-generated content tak ditandai (REQ-03-023, REQ-04-015/016); route tanpa gating permission (REQ-03-004/017); payment status tanpa refunded/disputed & shipment tanpa source/freshness (REQ-03-027/028).
+
+**Bukti**:
+- `packages/ui/src/operational.tsx:20-24` - `MetricCard` menampilkan freshness (butir 5 terpenuhi)
+- `packages/ui/src/app-shell.tsx:24-27` - prop `surface: 'client' | 'owner'` memisah permukaan (butir 12, sebagian)
+- Butir gagal dirujuk ke bukti REQ terkait: REQ-03-035 (impact destruktif), REQ-03-034 (states), REQ-03-030 (definitions), REQ-03-023 (AI-content), REQ-03-004/017 (permission), REQ-03-027/028 (payment/shipment)
+
+**Yang kurang**: penuhi butir yang gagal — tampilkan impact aksi destruktif, lengkapi 4 state di tiap surface, definitions di analytics, penanda konten AI, gating permission per route, status refunded/disputed & source/freshness pada payment/shipment.
+
+---
