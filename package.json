@@ -13,6 +13,7 @@
     "lint": "eslint . && turbo run lint",
     "typecheck": "tsc --project tsconfig.json --noEmit && turbo run typecheck",
     "migrate": "pnpm --filter @chai/database run migrate",
+    "verify:infra": "node scripts/verify-infra-config.mjs",
     "test": "vitest run tests && turbo run test",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:s1": "vitest run --config vitest.integration.config.ts",

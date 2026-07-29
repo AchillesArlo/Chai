@@ -5,6 +5,7 @@ import {
   withTenantTransaction,
   type Database,
 } from '@chai/database';
+import { commitBusinessMutation } from '@chai/domain';
 import {
   verifyMockPaymentWebhookSignature,
   type PaymentSession,
@@ -189,15 +190,60 @@ export class PostgresPaymentsRepository extends PaymentsRepository {
           };
         }
 
-        const updated: PaymentRow[] = await tx`
-          UPDATE chai.payment
-          SET status = ${status},
-              status_event_at = ${eventAt ?? null},
-              updated_at = now()
-          WHERE tenant_id = ${tenantId} AND external_id = ${externalId}
-          RETURNING *
-        `;
-        const next = updated[0] as PaymentRow;
+        // Money is an external effect: the state change, its audit row, and the
+        // payment.updated event must land together or not at all (README
+        // invariant, ADR-007). Before this, applyWebhook ran a bare UPDATE, so
+        // a PAID transition left NO audit trail and emitted NO event -- realtime,
+        // analytics, and automations never learned the payment settled, and
+        // there was no record of who/what moved the money state.
+        const next = await commitBusinessMutation(tx, {
+          describe: (result) => ({
+            audit: {
+              action: 'payment.status_changed',
+              actorId: API_SERVICE_PRINCIPAL_ID,
+              metadata: {
+                currency: result.currency,
+                // externalId is the provider's handle (text), so it travels in
+                // metadata; resource_id is a uuid column.
+                externalId: result.external_id,
+                fromStatus: row.status,
+                provider: 'mock-payment',
+                toStatus: result.status,
+              },
+              resourceId: result.id,
+              resourceType: 'payment',
+            },
+            events: [
+              {
+                aggregateId: result.id,
+                aggregateType: 'payment',
+                aggregateVersion: 1,
+                eventType: 'payment.updated',
+                partitionKey: result.external_id,
+                // Amount travels as integer minor units plus currency code,
+                // never a float (README invariant).
+                payload: {
+                  amountMinor: result.amount_cents,
+                  currency: result.currency,
+                  externalId: result.external_id,
+                  status: result.status,
+                },
+              },
+            ],
+          }),
+          mutate: async () => {
+            const updated: PaymentRow[] = await tx`
+              UPDATE chai.payment
+              SET status = ${status},
+                  status_event_at = ${eventAt ?? null},
+                  updated_at = now()
+              WHERE tenant_id = ${tenantId} AND external_id = ${externalId}
+              RETURNING *
+            `;
+            return updated[0] as PaymentRow;
+          },
+          tenantId,
+        });
         return {
           event: {
             externalId: next.external_id,

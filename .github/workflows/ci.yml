@@ -43,6 +43,12 @@ jobs:
 
       - run: pnpm run test
 
+      # Infra configs are not TypeScript, so lint/typecheck/test are blind to
+      # them. Nine production bugs hid in postgres.conf / nginx.conf /
+      # prometheus.yml / otel-collector.yaml / sentinel.conf because nothing
+      # ever executed those files. This runs each one through its real consumer.
+      - run: pnpm run verify:infra
+
       # Docker services are available on GitHub runners, so the suites that
       # need a real PostgreSQL (RLS policies, the migration runner, the
       # tenant-isolation matrix) can and should gate merges too — they are the
