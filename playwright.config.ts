@@ -59,6 +59,7 @@ export default defineConfig({
       env: {
         ...process.env,
         APP_ENV: 'test',
+        DATABASE_URL: process.env.DATABASE_URL ?? 'postgres://chai_admin:synthetic-admin-password@localhost:5432/chai',
         CHAI_CAPABILITY_PAYMENT_ORCHESTRATION: 'true',
       },
       port: 3001,

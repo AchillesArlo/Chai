@@ -9,8 +9,8 @@ export const metadata: Metadata = {
 
 const CONFIG = {
   audience: 'owner-console' as const,
-  apiBaseUrl: process.env.API_URL ?? 'http://localhost:3001',
-  defaultRedirect: '/',
+  apiBaseUrl: process.env.API_URL ?? 'http://127.0.0.1:3001',
+  defaultRedirect: '/tenants',
   title: 'Owner Console',
   subtitle: 'Chai platform administration',
   emailLabel: 'Owner email',

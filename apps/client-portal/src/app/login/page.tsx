@@ -10,8 +10,8 @@ export const metadata: Metadata = {
 
 const CONFIG = {
   audience: 'client-portal' as const,
-  apiBaseUrl: process.env.API_URL ?? 'http://localhost:3001',
-  defaultRedirect: '/inbox',
+  apiBaseUrl: process.env.API_URL ?? 'http://127.0.0.1:3001',
+  defaultRedirect: '/portal/inbox',
   title: 'Sign in to Chai',
   subtitle: 'Your customer operations workspace',
   emailLabel: 'Work email',

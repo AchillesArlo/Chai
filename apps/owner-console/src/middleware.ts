@@ -11,7 +11,7 @@ import {
 
 const OWNER_CONSOLE_CONFIG: MiddlewareRouteConfig = {
   audience: 'owner-console',
-  defaultRedirect: '/',
+  defaultRedirect: '/tenants',
   loginPath: '/login',
   protectedPrefixes: [
     '/audit',

@@ -11,7 +11,7 @@ import {
 
 const CLIENT_PORTAL_CONFIG: MiddlewareRouteConfig = {
   audience: 'client-portal',
-  defaultRedirect: '/inbox',
+  defaultRedirect: '/portal/inbox',
   loginPath: '/login',
   protectedPrefixes: [
     '/inbox',
