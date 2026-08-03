@@ -1,6 +1,7 @@
 import { TenantId } from '../../common/tenant-id.decorator';
 import { RequirePermission } from '../../guards/require-permission.decorator';
-import { Controller, Get, Post, Put, Delete, Body, Param, Inject } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Inject, Req } from '@nestjs/common';
+import type { FastifyRequest } from 'fastify';
 import {
   IsIn,
   IsInt,
@@ -10,7 +11,10 @@ import {
   IsString,
   Min,
 } from 'class-validator';
+import { assertRecentAuthentication } from '../../guards/high-risk';
+import { AuditPort } from '../shared/audit.port';
 import { ConnectorConfigRepository } from './connector-config.repository';
+import { SecretService } from '../secret/secret.service';
 
 const CONNECTOR_STATUS = ['active', 'inactive', 'error', 'testing'] as const;
 
@@ -116,19 +120,31 @@ class CreateSecretDto {
   @IsString()
   secretKey!: string;
 
-  // Encrypted secret bytes arrive base64-encoded; decoded to a Buffer below.
+  // Plaintext secret value; the controller encrypts it via SecretService and
+  // stores only the vault reference in the DB. Plaintext never persists.
   @IsString()
-  secretValueEncrypted!: string;
+  secretPlaintext!: string;
 
   @IsInt()
   @Min(1)
   secretVersion!: number;
 }
 
+class RotateSecretDto {
+  // New plaintext value; the controller encrypts and stores a new vault ref.
+  @IsString()
+  secretPlaintext!: string;
+
+  @IsString()
+  rotatedBy!: string;
+}
+
 @Controller('api/owner/v1/connector-config')
 export class ConnectorConfigController {
   constructor(
     @Inject('ConnectorConfigRepository') private readonly repo: ConnectorConfigRepository,
+    private readonly secretService: SecretService,
+    private readonly audit: AuditPort,
   ) {}
 
   @Get('configs')
@@ -178,18 +194,106 @@ export class ConnectorConfigController {
     @TenantId() tenantId: string,
     @Param('id') id: string,
     @Body() body: CreateSecretDto,
+    @Req() request: FastifyRequest,
   ) {
-    const { secretValueEncrypted, ...rest } = body;
-    return this.repo.createSecret(tenantId, {
+    // Writing a new connector credential is a secret-rotation action; require
+    // a recently-presented credential, not merely a live session (ADR-029).
+    assertRecentAuthentication(request);
+    const { secretPlaintext, ...rest } = body;
+    const secretValueRef = await this.secretService.store(
+      tenantId,
+      body.secretKey,
+      secretPlaintext,
+    );
+    const created = await this.repo.createSecret(tenantId, {
       ...rest,
       connectorConfigId: id,
-      secretValueEncrypted: Buffer.from(secretValueEncrypted, 'base64'),
+      secretValueRef,
+      secretValueLegacyEncrypted: null,
     });
+    await this.audit.append({
+      tenantId,
+      eventType: 'connector.secret.created',
+      actorType: 'user',
+      actorId: request.principal?.id ?? 'unknown',
+      resourceType: 'connector_secret',
+      resourceId: created.id,
+      action: 'create',
+      previousState: null,
+      newState: { connectorConfigId: id, secretKey: body.secretKey, secretVersion: body.secretVersion },
+      metadata: { rotatedBy: body.rotatedBy ?? null },
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+      correlationId: null,
+    });
+    return created;
+  }
+
+  @Post('secrets/:id/rotate')
+  @RequirePermission('platform.channel.manage')
+  async rotateSecret(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Body() body: RotateSecretDto,
+    @Req() request: FastifyRequest,
+  ) {
+    // Rotating a connector credential is a high-risk action; require recent
+    // authentication (ADR-029) and record an immutable audit entry
+    // (REQ-09-029 / REQ-17-049).
+    assertRecentAuthentication(request);
+    const previous = await this.findSecretForRotation(tenantId, id);
+    const secretValueRef = await this.secretService.rotate(
+      tenantId,
+      previous.secretKey,
+      body.secretPlaintext,
+    );
+    const rotatedAt = new Date().toISOString();
+    const updated = await this.repo.rotateSecret(tenantId, id, {
+      secretValueRef,
+      secretVersion: previous.secretVersion + 1,
+      rotatedAt,
+      rotatedBy: body.rotatedBy,
+    });
+    await this.audit.append({
+      tenantId,
+      eventType: 'connector.secret.rotated',
+      actorType: 'user',
+      actorId: request.principal?.id ?? 'unknown',
+      resourceType: 'connector_secret',
+      resourceId: id,
+      action: 'update',
+      previousState: { secretVersion: previous.secretVersion },
+      newState: { secretVersion: updated.secretVersion, rotatedAt, rotatedBy: body.rotatedBy },
+      metadata: { connectorConfigId: previous.connectorConfigId, secretKey: previous.secretKey },
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+      correlationId: null,
+    });
+    return updated;
+  }
+
+  /**
+   * Lookup a secret across all configs owned by `tenantId` so the rotate
+   * endpoint can find it without a configId parameter. Throws if not found.
+   */
+  private async findSecretForRotation(tenantId: string, id: string) {
+    const configs = await this.repo.listConfigs(tenantId);
+    for (const c of configs) {
+      const secrets = await this.repo.listSecrets(tenantId, c.id);
+      const found = secrets.find((s) => s.id === id);
+      if (found) return found;
+    }
+    throw new Error('Connector secret not found');
   }
 
   @Delete('secrets/:id')
   @RequirePermission('platform.channel.manage')
-  async deleteSecret(@TenantId() tenantId: string, @Param('id') id: string) {
+  async deleteSecret(
+    @TenantId() tenantId: string,
+    @Param('id') id: string,
+    @Req() request: FastifyRequest,
+  ) {
+    assertRecentAuthentication(request);
     return this.repo.deleteSecret(tenantId, id);
   }
 }

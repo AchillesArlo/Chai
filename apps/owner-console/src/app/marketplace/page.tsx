@@ -208,7 +208,16 @@ export default function MarketplacePage() {
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700">Meta / Provider App Secret</label>
-                  <input type="password" defaultValue="sec_meta_891237198237" className="mt-1 w-full rounded border p-2 font-mono" />
+                  {/* REQ-04-010: secret tidak di-reveal setelah tersimpan. Nilai
+                      placeholder masked; input hanya untuk nilai baru saat
+                      rotasi. */}
+                  <input
+                    type="password"
+                    readOnly
+                    value="••••••••••••••••"
+                    aria-label="Meta App Secret (tersimpan, tersembunyi)"
+                    className="mt-1 w-full rounded border bg-slate-50 p-2 font-mono text-slate-500"
+                  />
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700">Global Webhook Ingress Endpoint</label>

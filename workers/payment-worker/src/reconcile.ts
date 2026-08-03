@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   withTenantTransaction,
   type Database,
@@ -6,6 +7,7 @@ import {
 } from '@chai/database';
 import {
   commitBusinessMutation,
+  createReconciliationRecord,
   decidePaymentTransition,
   isTerminalPaymentStatus,
   stopPaymentReminders,
@@ -139,9 +141,12 @@ interface LockedPaymentRow {
   currency: string;
   external_id: string;
   id: string;
+  invoice_id: string | null;
   status: PaymentStatus;
   status_event_at: Date | null;
 }
+
+const API_CLIENT_OWNER_ID = '01890f47-9b3c-7cc2-98e8-123456789205';
 
 /**
  * Coarse lifecycle stage, used as the outbox aggregate version so a consumer
@@ -181,7 +186,7 @@ async function applyReconciliation(
   eventAt: Date | null,
 ): Promise<boolean> {
   const rows = await transaction<LockedPaymentRow[]>`
-    SELECT id, external_id, status, status_event_at, amount_cents, currency
+    SELECT id, external_id, status, status_event_at, amount_cents, currency, invoice_id
     FROM chai.payment
     WHERE tenant_id = ${tenant.tenantId} AND external_id = ${externalId}
     FOR UPDATE
@@ -240,15 +245,35 @@ async function applyReconciliation(
             status_event_at = ${eventAt},
             updated_at = now()
         WHERE id = ${row.id}
-        RETURNING id, external_id, status, status_event_at, amount_cents, currency
+        RETURNING id, external_id, status, status_event_at, amount_cents, currency, invoice_id
       `;
       const applied = updated[0] as LockedPaymentRow;
       if (applied.status === 'PAID') {
         cancelledReminders = await stopPaymentReminders(
           transaction,
           tenant.tenantId,
-          applied.external_id,
+          applied.id,
         );
+        if (applied.invoice_id) {
+          await transaction`
+            UPDATE chai.invoice
+            SET status = 'paid',
+                paid_at = now(),
+                updated_at = now()
+            WHERE tenant_id = ${tenant.tenantId} AND id = ${applied.invoice_id}::uuid
+          `;
+        }
+        const notifId = randomUUID();
+        await transaction`
+          INSERT INTO chai.notification (
+            id, tenant_id, user_id, type, title, body, channel, status, metadata
+          ) VALUES (
+            ${notifId}, ${tenant.tenantId}, ${API_CLIENT_OWNER_ID}::uuid, 'IN_APP',
+            'Pembayaran diterima',
+            ${`Pembayaran sebesar ${applied.currency} ${applied.amount_cents} (${applied.external_id}) telah diterima.`},
+            null, 'PENDING', '{}'::jsonb
+          )
+        `;
       }
       return applied;
     },
@@ -318,6 +343,29 @@ export async function runPaymentReconciler(
           ),
         );
         if (applied) didWork = true;
+        if (next === 'UNKNOWN_RESULT') {
+          await runInTenant(database, tenant, async (transaction) => {
+            const [p] = await transaction<{ id: string; status: string }[]>`
+              SELECT id, status FROM chai.payment WHERE tenant_id = ${tenant.tenantId} AND external_id = ${externalId}
+            `;
+            if (p) {
+              const existing = await transaction<{ id: string }[]>`
+                SELECT id FROM chai.payment_reconciliation
+                WHERE tenant_id = ${tenant.tenantId} AND external_id = ${externalId} AND status = 'OPEN' LIMIT 1
+              `;
+              if (existing.length === 0) {
+                await createReconciliationRecord(transaction, {
+                  discrepancyType: 'UNKNOWN_RESULT',
+                  externalId,
+                  localStatus: p.status,
+                  paymentId: p.id,
+                  provider: 'payment-provider',
+                  providerStatus: observed.status,
+                });
+              }
+            }
+          });
+        }
       }
     }
 

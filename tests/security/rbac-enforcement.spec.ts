@@ -118,41 +118,55 @@ test.describe('account status enforcement', () => {
 // ─── Role-Based Access ───────────────────────────────────────────────
 
 test.describe('role-based access control', () => {
-  test('viewer can read team but cannot invite', async ({ request }) => {
+  // CLIENT_VIEWER and CLIENT_AGENT do not hold `tenant.team.read`
+  // (packages/auth/src/permissions.ts): team membership is internal-tenant
+  // information neither role needs, so both are denied read too, not just
+  // write. This asserts the actual least-privilege matrix rather than an
+  // assumption that reading team membership is a baseline capability.
+  test('viewer cannot read or invite team', async ({ request }) => {
     const read = await request.get(`${API_BASE}/api/client/v1/team`, {
       headers: { 'x-test-subject': 'local|client-viewer' },
     });
-    expect(read.status()).toBe(200);
+    expect(read.status()).toBe(403);
 
     const write = await request.post(`${API_BASE}/api/client/v1/team`, {
-      headers: { 'x-test-subject': 'local|client-viewer' },
+      headers: {
+        'Idempotency-Key': `viewer-invite-${Date.now()}`,
+        'x-test-subject': 'local|client-viewer',
+      },
       data: { userId: 'new-user', role: 'CLIENT_VIEWER' },
     });
     expect(write.status()).toBe(403);
   });
 
-  test('agent can read team but cannot invite', async ({ request }) => {
+  test('agent cannot read or invite team', async ({ request }) => {
     const read = await request.get(`${API_BASE}/api/client/v1/team`, {
       headers: { 'x-test-subject': 'local|client-agent' },
     });
-    expect(read.status()).toBe(200);
+    expect(read.status()).toBe(403);
 
     const write = await request.post(`${API_BASE}/api/client/v1/team`, {
-      headers: { 'x-test-subject': 'local|client-agent' },
+      headers: {
+        'Idempotency-Key': `agent-invite-${Date.now()}`,
+        'x-test-subject': 'local|client-agent',
+      },
       data: { userId: 'new-user', role: 'CLIENT_VIEWER' },
     });
     expect(write.status()).toBe(403);
   });
 
-  test('agent can read team but cannot update roles', async ({ request }) => {
+  test('agent cannot update roles', async ({ request }) => {
     const update = await request.patch(`${API_BASE}/api/client/v1/team/some-id`, {
-      headers: { 'x-test-subject': 'local|client-agent' },
+      headers: {
+        'Idempotency-Key': `agent-update-${Date.now()}`,
+        'x-test-subject': 'local|client-agent',
+      },
       data: { role: 'CLIENT_VIEWER' },
     });
     expect(update.status()).toBe(403);
   });
 
-  test('agent can read team but cannot revoke members', async ({ request }) => {
+  test('agent cannot revoke members', async ({ request }) => {
     const revoke = await request.delete(`${API_BASE}/api/client/v1/team/some-id`, {
       headers: { 'x-test-subject': 'local|client-agent' },
     });
@@ -170,36 +184,59 @@ test.describe('role-based access control', () => {
 // ─── Action Policy ───────────────────────────────────────────────────
 
 test.describe('action policy enforcement', () => {
+  // 'reply' is not a registered tool (packages/domain/src/ai-policy/tool-policy.ts
+  // TOOL_CATALOG has no bare "reply" entry — an unrecognised tool is denied,
+  // never treated as low-risk, per the engine's own contract). knowledge.search
+  // is a real LOW-risk, AI-executable, no-entitlement tool, so it exercises the
+  // mode/origin rule this suite actually means to test.
   test('AI origin allowed in AI_ACTIVE mode', async ({ request }) => {
     const response = await request.post(`${API_BASE}/api/client/v1/actions/evaluate`, {
-      headers: { 'x-test-subject': 'local|client-owner' },
-      data: { mode: 'AI_ACTIVE', origin: 'ai', tool: 'reply', parameters: {} },
+      headers: {
+        'Idempotency-Key': `action-ai-allow-${Date.now()}`,
+        'x-test-subject': 'local|client-owner',
+      },
+      data: { mode: 'AI_ACTIVE', origin: 'ai', tool: 'knowledge.search', parameters: {} },
     });
     expect(response.status()).toBe(200);
     const body = await response.json();
-    expect(body.kind).toBe('allow');
+    expect(body.data.kind).toBe('allow');
   });
 
-  test('human origin denied in AI_ACTIVE mode', async ({ request }) => {
+  // The engine only blocks the reverse direction: AI acting while a human has
+  // taken over (HUMAN_ACTIVE). It does not deny a human acting while AI is
+  // active — a human is always allowed to act. See evaluateToolPolicy's
+  // AI_OUTBOUND_BLOCKED rule (origin 'ai' + mode 'HUMAN_ACTIVE').
+  test('AI origin denied in HUMAN_ACTIVE mode', async ({ request }) => {
     const response = await request.post(`${API_BASE}/api/client/v1/actions/evaluate`, {
-      headers: { 'x-test-subject': 'local|client-owner' },
-      data: { mode: 'AI_ACTIVE', origin: 'human', tool: 'reply', parameters: {} },
+      headers: {
+        'Idempotency-Key': `action-ai-deny-${Date.now()}`,
+        'x-test-subject': 'local|client-owner',
+      },
+      data: { mode: 'HUMAN_ACTIVE', origin: 'ai', tool: 'knowledge.search', parameters: {} },
     });
     expect(response.status()).toBe(403);
+    const body = await response.json();
+    expect(body.error.code).toBe('AI_OUTBOUND_BLOCKED');
   });
 
   test('rejects invalid mode value', async ({ request }) => {
     const response = await request.post(`${API_BASE}/api/client/v1/actions/evaluate`, {
-      headers: { 'x-test-subject': 'local|client-owner' },
-      data: { mode: 'INVALID_MODE', origin: 'ai', tool: 'reply', parameters: {} },
+      headers: {
+        'Idempotency-Key': `action-bad-mode-${Date.now()}`,
+        'x-test-subject': 'local|client-owner',
+      },
+      data: { mode: 'INVALID_MODE', origin: 'ai', tool: 'knowledge.search', parameters: {} },
     });
     expect(response.status()).toBe(400);
   });
 
   test('rejects invalid origin value', async ({ request }) => {
     const response = await request.post(`${API_BASE}/api/client/v1/actions/evaluate`, {
-      headers: { 'x-test-subject': 'local|client-owner' },
-      data: { mode: 'AI_ACTIVE', origin: 'system', tool: 'reply', parameters: {} },
+      headers: {
+        'Idempotency-Key': `action-bad-origin-${Date.now()}`,
+        'x-test-subject': 'local|client-owner',
+      },
+      data: { mode: 'AI_ACTIVE', origin: 'system', tool: 'knowledge.search', parameters: {} },
     });
     expect(response.status()).toBe(400);
   });

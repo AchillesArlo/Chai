@@ -4,6 +4,8 @@ import {
   DATABASE,
   type DatabaseHandle,
 } from '../../database/database.module';
+import { ActionKnowledgePort } from '../shared/action-tool.port';
+import { KnowledgeActionAdapter } from './knowledge-action.adapter';
 import { KnowledgeController } from './knowledge.controller';
 import {
   InMemoryKnowledgeRepository,
@@ -13,7 +15,7 @@ import { PostgresKnowledgeRepository } from './postgres-knowledge.repository';
 
 @Module({
   controllers: [KnowledgeController],
-  exports: [KnowledgeRepository],
+  exports: [KnowledgeRepository, ActionKnowledgePort],
   providers: [
     {
       provide: KnowledgeRepository,
@@ -23,6 +25,7 @@ import { PostgresKnowledgeRepository } from './postgres-knowledge.repository';
           ? new PostgresKnowledgeRepository(database)
           : new InMemoryKnowledgeRepository(),
     },
+    { provide: ActionKnowledgePort, useClass: KnowledgeActionAdapter },
   ],
 })
 // NestJS discovers module metadata from this decorated class.

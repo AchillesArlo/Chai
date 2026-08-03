@@ -7,12 +7,13 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   Req,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 
-import { IsIn, IsISO8601, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsISO8601, IsOptional, IsString, IsUUID } from 'class-validator';
 
 import type { ShipmentMilestone } from '@chai/connectors/mock-shipping';
 
@@ -30,6 +31,21 @@ function tenantScope(request: FastifyRequest): string {
 class LinkBody {
   @IsString()
   carrier!: string;
+
+  /** Owning contact, recorded so a customer lookup can be verified (ADR-027). */
+  @IsOptional()
+  @IsString()
+  contactId?: string;
+
+  /** Structural link to an order for multi-package fulfilment (REQ-17-071). */
+  @IsOptional()
+  @IsUUID()
+  orderId?: string;
+
+  /** Associated order, recorded as alternative ownership proof (ADR-027). */
+  @IsOptional()
+  @IsString()
+  orderReference?: string;
 
   @IsString()
   trackingNumber!: string;
@@ -110,11 +126,17 @@ export class LogisticsController {
   @RequirePermission('shipment.read')
   async get(
     @Param('trackingNumber') trackingNumber: string,
+    @Query('contactId') contactId: string | undefined,
+    @Query('orderReference') orderReference: string | undefined,
     @Req() request: FastifyRequest,
   ) {
-    const view = await this.repository.customerView(
+    const view = await this.repository.customerLookup(
       tenantScope(request),
       trackingNumber,
+      {
+        ...(contactId ? { contactId } : {}),
+        ...(orderReference ? { orderReference } : {}),
+      },
     );
     if (!view) throw new NotFoundException();
     return view;

@@ -1,7 +1,7 @@
 
 
 # Project Memory — Chai
-> 73 notes | Score threshold: >40
+> 132 notes | Score threshold: >40
 
 ## Safety — Never Run Destructive Commands
 
@@ -16,30 +16,31 @@
 - **ALWAYS** ask the user before running commands that modify system state, install packages, or make network requests.
 - When in doubt, **show the command first** and wait for approval.
 
-**Stack:** TypeScript · Next.js + React · DB: PostgreSQL, Redis
+**Stack:** TypeScript · Fastify + Next.js + React + Tailwind · DB: PostgreSQL, Redis
 
 ## 📝 NOTE: 1 uncommitted file(s) in working tree.\n\n## Important Warnings
 
-- **Low cohesion detected in Domain Cluster 210** — Cluster 210 (18 nodes) has a very low cohesion score (0.08). This sugg
-- **Low cohesion detected in Domain Cluster 178** — Cluster 178 (22 nodes) has a very low cohesion score (0.05). This sugg
-- **Low cohesion detected in Domain Cluster 164** — Cluster 164 (13 nodes) has a very low cohesion score (0.08). This sugg
-- **Low cohesion detected in Domain Cluster 155** — Cluster 155 (11 nodes) has a very low cohesion score (0.09). This sugg
-- **Low cohesion detected in Domain Cluster 130** — Cluster 130 (11 nodes) has a very low cohesion score (0.09). This sugg
-- **Low cohesion detected in Domain Cluster 126** — Cluster 126 (18 nodes) has a very low cohesion score (0.06). This sugg
+- **Low cohesion detected in Domain Cluster 10** — Cluster 10 (40 nodes) has a very low cohesion score (0.04). This sugge
+- **Low cohesion detected in Domain Cluster 257** — Cluster 257 (14 nodes) has a very low cohesion score (0.07). This sugg
+- **Low cohesion detected in Domain Cluster 244** — Cluster 244 (15 nodes) has a very low cohesion score (0.07). This sugg
+- **Low cohesion detected in Domain Cluster 232** — Cluster 232 (26 nodes) has a very low cohesion score (0.06). This sugg
+- **Low cohesion detected in Domain Cluster 196** — Cluster 196 (34 nodes) has a very low cohesion score (0.03). This sugg
+- **Low cohesion detected in Domain Cluster 174** — Cluster 174 (11 nodes) has a very low cohesion score (0.09). This sugg
 
-## Active: `.`
+## Active: `docs/plans`
 
-- **convention in .gitignore**
-- **convention in .gitignore**
-- **convention in .gitignore**
-- **convention in .gitignore**
+- **🟢 Edited docs/plans/2026-07-29-daftar-masalah-untuk-agen-lanjutan.md (5 changes, 191min)**
 
 ## Project Standards
 
 - convention in .gitignore
-- convention in .gitignore
-- convention in .gitignore
-- convention in .gitignore
+- Version your API from day 1 (/api/v1/)
+- Use consistent response format across all endpoints
+- Implement soft delete for important data — don't hard delete without confirmation
+- Handle timezone correctly — store UTC, display in user's timezone
+- Make layouts responsive from the start — mobile-first approach
+- Disable submit button during form submission — prevent double-submit
+- Always add empty states ("No items yet" with call-to-action)
 
 ## Learned Patterns
 

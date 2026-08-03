@@ -3,6 +3,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  ForbiddenException,
   Get,
   Headers,
   HttpCode,
@@ -46,8 +47,28 @@ export class ChannelsController {
   constructor(
     @Inject(ConversationRepository)
     private readonly repository: ConversationRepository,
+    @Inject(RealtimePublisher)
     private readonly publisher: RealtimePublisher,
   ) {}
+
+  @Get('service/v1/channels/:provider/webhook')
+  async verifyWebhookHandshake(
+    @Param('provider') _provider: string,
+    @Req() request: FastifyRequest,
+  ): Promise<string> {
+    const query = request.query as Record<string, string | undefined>;
+    const mode = query['hub.mode'];
+    const token = query['hub.verify_token'];
+    const challenge = query['hub.challenge'];
+
+    const expectedToken = process.env.META_WEBHOOK_VERIFY_TOKEN || 'chai_meta_verify_token_secret';
+
+    if (mode === 'subscribe' && token === expectedToken && challenge) {
+      return challenge;
+    }
+
+    throw new ForbiddenException({ code: 'INVALID_VERIFY_TOKEN' });
+  }
 
   @Post('service/v1/channels/:provider/webhook')
   async ingestWebhook(

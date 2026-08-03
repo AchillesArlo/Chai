@@ -1,14 +1,152 @@
 import { TenantId } from '../../common/tenant-id.decorator';
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Inject, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { IsArray, IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString } from 'class-validator';
+import type { FastifyRequest } from 'fastify';
 import { EnterpriseRepository } from './enterprise.repository';
 import { TenantGuard } from '../../common/guards/tenant.guard';
+import { assertRecentAuthentication } from '../../guards/high-risk';
 import { RequirePermission } from '../../guards/require-permission.decorator';
 import type { SsoConfiguration, ScimConfiguration, CustomRole, RoleAssignment, AuditExportConfig, AuditExportHistory } from './enterprise.repository';
+
+class UpsertSsoConfigDto {
+  @IsIn(['saml', 'oidc'])
+  provider!: 'saml' | 'oidc';
+
+  @IsString()
+  entityId!: string;
+
+  @IsString()
+  ssoUrl!: string;
+
+  @IsString()
+  certificate!: string;
+
+  @IsObject()
+  attributeMapping!: Record<string, string>;
+
+  @IsBoolean()
+  enabled!: boolean;
+}
+
+class UpsertScimConfigDto {
+  @IsString()
+  baseUrl!: string;
+
+  @IsBoolean()
+  userSyncEnabled!: boolean;
+
+  @IsBoolean()
+  groupSyncEnabled!: boolean;
+}
+
+class CreateRoleDto {
+  @IsString()
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsArray()
+  @IsString({ each: true })
+  permissions!: string[];
+}
+
+class UpdateRoleDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  permissions?: string[];
+}
+
+class AssignRoleDto {
+  @IsString()
+  userId!: string;
+
+  @IsString()
+  roleId!: string;
+
+  @IsString()
+  assignedBy!: string;
+}
+
+class UpsertAuditExportConfigDto {
+  @IsIn(['s3', 'splunk', 'elk', 'webhook'])
+  destinationType!: 's3' | 'splunk' | 'elk' | 'webhook';
+
+  @IsObject()
+  destinationConfig!: Record<string, unknown>;
+
+  @IsObject()
+  filterCriteria!: Record<string, unknown>;
+
+  @IsBoolean()
+  enabled!: boolean;
+}
+
+class CreateAuditExportHistoryDto {
+  @IsString()
+  configId!: string;
+
+  @IsIn(['pending', 'running', 'completed', 'failed'])
+  status!: 'pending' | 'running' | 'completed' | 'failed';
+
+  @IsInt()
+  recordsExported!: number;
+
+  @IsString()
+  startedAt!: string;
+
+  @IsOptional()
+  @IsString()
+  completedAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  errorMessage?: string | null;
+}
+
+class UpdateAuditExportHistoryDto {
+  @IsOptional()
+  @IsString()
+  configId?: string;
+
+  @IsOptional()
+  @IsIn(['pending', 'running', 'completed', 'failed'])
+  status?: 'pending' | 'running' | 'completed' | 'failed';
+
+  @IsOptional()
+  @IsInt()
+  recordsExported?: number;
+
+  @IsOptional()
+  @IsString()
+  startedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  completedAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  errorMessage?: string | null;
+}
 
 @Controller('api/owner/v1/enterprise')
 @UseGuards(TenantGuard)
 export class EnterpriseController {
-  constructor(private readonly repo: EnterpriseRepository) {}
+  constructor(
+    @Inject(EnterpriseRepository)
+    private readonly repo: EnterpriseRepository,
+  ) {}
 
   // SSO endpoints
   @Get('sso/:provider')
@@ -24,9 +162,9 @@ export class EnterpriseController {
   @RequirePermission('platform.access.manage')
   async upsertSsoConfig(
     @TenantId() tenantId: string,
-    @Body() config: Omit<SsoConfiguration, 'id' | 'createdAt' | 'updatedAt'>,
+    @Body() config: UpsertSsoConfigDto,
   ): Promise<SsoConfiguration> {
-    return this.repo.upsertSsoConfig(tenantId, config);
+    return this.repo.upsertSsoConfig(tenantId, config as Omit<SsoConfiguration, 'id' | 'createdAt' | 'updatedAt'>);
   }
 
   // SCIM endpoints
@@ -40,9 +178,9 @@ export class EnterpriseController {
   @RequirePermission('platform.access.manage')
   async upsertScimConfig(
     @TenantId() tenantId: string,
-    @Body() config: Omit<ScimConfiguration, 'id' | 'createdAt' | 'updatedAt' | 'lastSyncAt'>,
+    @Body() config: UpsertScimConfigDto,
   ): Promise<ScimConfiguration> {
-    return this.repo.upsertScimConfig(tenantId, config);
+    return this.repo.upsertScimConfig(tenantId, config as Omit<ScimConfiguration, 'id' | 'createdAt' | 'updatedAt' | 'lastSyncAt'>);
   }
 
   // Custom Role endpoints
@@ -65,9 +203,9 @@ export class EnterpriseController {
   @RequirePermission('platform.access.manage')
   async createRole(
     @TenantId() tenantId: string,
-    @Body() role: Omit<CustomRole, 'id' | 'createdAt' | 'updatedAt'>,
+    @Body() role: CreateRoleDto,
   ): Promise<CustomRole> {
-    return this.repo.createRole(tenantId, role);
+    return this.repo.createRole(tenantId, role as Omit<CustomRole, 'id' | 'createdAt' | 'updatedAt'>);
   }
 
   @Put('roles/:id')
@@ -75,7 +213,7 @@ export class EnterpriseController {
   async updateRole(
     @TenantId() tenantId: string,
     @Param('id') id: string,
-    @Body() update: Partial<CustomRole>,
+    @Body() update: UpdateRoleDto,
   ): Promise<CustomRole> {
     return this.repo.updateRole(tenantId, id, update);
   }
@@ -103,7 +241,7 @@ export class EnterpriseController {
   @RequirePermission('platform.access.manage')
   async assignRole(
     @TenantId() tenantId: string,
-    @Body() body: { userId: string; roleId: string; assignedBy: string },
+    @Body() body: AssignRoleDto,
   ): Promise<RoleAssignment> {
     return this.repo.assignRole(tenantId, body.userId, body.roleId, body.assignedBy);
   }
@@ -129,9 +267,14 @@ export class EnterpriseController {
   @RequirePermission('platform.settings.manage')
   async upsertAuditExportConfig(
     @TenantId() tenantId: string,
-    @Body() config: Omit<AuditExportConfig, 'id' | 'createdAt' | 'updatedAt' | 'lastExportAt'>,
+    @Body() config: UpsertAuditExportConfigDto,
+    @Req() request: FastifyRequest,
   ): Promise<AuditExportConfig> {
-    return this.repo.upsertAuditExportConfig(tenantId, config);
+    // Redirecting where audit data is exported to is a data-exfiltration
+    // vector if a session were hijacked; require a recently-presented
+    // credential, not merely a live session (ADR-029).
+    assertRecentAuthentication(request);
+    return this.repo.upsertAuditExportConfig(tenantId, config as Omit<AuditExportConfig, 'id' | 'createdAt' | 'updatedAt' | 'lastExportAt'>);
   }
 
   // Audit Export History endpoints
@@ -148,9 +291,9 @@ export class EnterpriseController {
   @RequirePermission('platform.settings.manage')
   async createAuditExportHistory(
     @TenantId() tenantId: string,
-    @Body() history: Omit<AuditExportHistory, 'id' | 'createdAt'>,
+    @Body() history: CreateAuditExportHistoryDto,
   ): Promise<AuditExportHistory> {
-    return this.repo.createAuditExportHistory(tenantId, history);
+    return this.repo.createAuditExportHistory(tenantId, history as Omit<AuditExportHistory, 'id' | 'createdAt'>);
   }
 
   @Put('audit-export-history/:id')
@@ -158,7 +301,7 @@ export class EnterpriseController {
   async updateAuditExportHistory(
     @TenantId() tenantId: string,
     @Param('id') id: string,
-    @Body() update: Partial<AuditExportHistory>,
+    @Body() update: UpdateAuditExportHistoryDto,
   ): Promise<AuditExportHistory> {
     return this.repo.updateAuditExportHistory(tenantId, id, update);
   }

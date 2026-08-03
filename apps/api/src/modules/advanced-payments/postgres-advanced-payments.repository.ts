@@ -8,11 +8,14 @@ import {
   cancelSubscription,
   createSubscription,
   getRefund,
+  listReconciliationRecords,
   listRefundsForPayment,
   listSettlements,
   listSubscriptions,
   processRefund,
+  resolveReconciliationRecord,
   type BillingCycle,
+  type PaymentReconciliationRecord,
   type RefundRecord,
   type SettlementRecord,
   type SubscriptionRecord,
@@ -120,6 +123,28 @@ export class PostgresAdvancedPaymentsRepository extends AdvancedPaymentsReposito
       this.database,
       { principalId: SERVICE_PRINCIPAL_ID, tenantId },
       (tx) => listSettlements(tx),
+    );
+  }
+
+  override async listReconciliations(
+    tenantId: string,
+  ): Promise<PaymentReconciliationRecord[]> {
+    return withTenantTransaction(
+      this.database,
+      { principalId: SERVICE_PRINCIPAL_ID, tenantId },
+      (tx) => listReconciliationRecords(tx),
+    );
+  }
+
+  override async resolveReconciliation(
+    tenantId: string,
+    id: string,
+    notes: string,
+  ): Promise<PaymentReconciliationRecord> {
+    return withTenantTransaction(
+      this.database,
+      { principalId: SERVICE_PRINCIPAL_ID, tenantId },
+      (tx) => resolveReconciliationRecord(tx, id, notes),
     );
   }
 

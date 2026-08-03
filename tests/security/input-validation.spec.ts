@@ -74,13 +74,16 @@ test.describe('SQL injection prevention', () => {
 
 test.describe('XSS prevention', () => {
   test('webhook body with script tag does not execute', async ({ request }) => {
+    // mock-channel (not 'mock') expects external_event_id/external_user_id;
+    // see packages/connectors/src/connectors/mock-channel.
     const response = await request.post(
-      `${API_BASE}/api/service/v1/channels/mock/webhook`,
+      `${API_BASE}/api/service/v1/channels/mock-channel/webhook`,
       {
         data: {
-          from: '+15551234567',
-          message: '<script>alert("xss")</script>',
-          tenantId: '01890f47-9b3c-7cc2-98e8-123456789203',
+          external_event_id: `xss-webhook-${Date.now()}`,
+          external_message_id: `xss-webhook-msg-${Date.now()}`,
+          external_user_id: '+15551234567',
+          text: '<script>alert("xss")</script>',
         },
       },
     );
@@ -97,12 +100,13 @@ test.describe('XSS prevention', () => {
   test('appointment title with HTML is stored as plain text', async ({ request }) => {
     const startsAt = new Date(Date.now() + 432000000).toISOString();
     const endsAt = new Date(Date.now() + 435600000).toISOString();
+    const idempotencyKey = `xss-test-${Date.now()}`;
 
     const response = await request.post(`${API_BASE}/api/client/v1/appointments`, {
-      headers: CLIENT_HEADERS,
+      headers: { ...CLIENT_HEADERS, 'Idempotency-Key': idempotencyKey },
       data: {
         contactId: 'xss-contact',
-        idempotencyKey: `xss-test-${Date.now()}`,
+        idempotencyKey,
         resourceId: 'xss-resource',
         startsAt,
         endsAt,
@@ -113,7 +117,7 @@ test.describe('XSS prevention', () => {
     if (response.ok()) {
       const body = await response.json();
       // Title should be stored as-is (plain text), not interpreted
-      expect(body.title).toBe('<img src=x onerror=alert(1)>');
+      expect(body.data.title).toBe('<img src=x onerror=alert(1)>');
     }
   });
 
@@ -195,7 +199,10 @@ test.describe('type validation', () => {
   test('rejects non-integer score in lead qualification', async ({ request }) => {
     const response = await request.patch(
       `${API_BASE}/api/client/v1/leads/test-id/qualify`,
-      { headers: CLIENT_HEADERS, data: { score: 'not-a-number' } },
+      {
+        headers: { ...CLIENT_HEADERS, 'Idempotency-Key': `bad-score-${Date.now()}` },
+        data: { score: 'not-a-number' },
+      },
     );
     expect(response.status()).toBe(400);
   });
@@ -203,25 +210,30 @@ test.describe('type validation', () => {
   test('rejects negative score in lead qualification', async ({ request }) => {
     const response = await request.patch(
       `${API_BASE}/api/client/v1/leads/test-id/qualify`,
-      { headers: CLIENT_HEADERS, data: { score: -1 } },
+      {
+        headers: { ...CLIENT_HEADERS, 'Idempotency-Key': `neg-score-${Date.now()}` },
+        data: { score: -1 },
+      },
     );
     expect(response.status()).toBe(400);
   });
 
   test('rejects zero amount in checkout', async ({ request }) => {
+    const idempotencyKey = `zero-amount-${Date.now()}`;
     const response = await request.post(`${API_BASE}/api/client/v1/payments/checkout`, {
-      headers: CLIENT_HEADERS,
-      data: { amount: 0, currency: 'usd', idempotencyKey: 'zero-amount' },
+      headers: { ...CLIENT_HEADERS, 'Idempotency-Key': idempotencyKey },
+      data: { amount: 0, currency: 'usd', idempotencyKey },
     });
     expect(response.status()).toBe(400);
   });
 
   test('rejects non-ISO8601 date in appointment booking', async ({ request }) => {
+    const idempotencyKey = `bad-date-${Date.now()}`;
     const response = await request.post(`${API_BASE}/api/client/v1/appointments`, {
-      headers: CLIENT_HEADERS,
+      headers: { ...CLIENT_HEADERS, 'Idempotency-Key': idempotencyKey },
       data: {
         contactId: 'contact',
-        idempotencyKey: 'bad-date',
+        idempotencyKey,
         resourceId: 'resource',
         startsAt: 'not-a-date',
         endsAt: 'also-not-a-date',
@@ -233,7 +245,7 @@ test.describe('type validation', () => {
 
   test('rejects missing required fields in appointment booking', async ({ request }) => {
     const response = await request.post(`${API_BASE}/api/client/v1/appointments`, {
-      headers: CLIENT_HEADERS,
+      headers: { ...CLIENT_HEADERS, 'Idempotency-Key': `missing-fields-appt-${Date.now()}` },
       data: { title: 'Incomplete' },
     });
     expect(response.status()).toBe(400);
@@ -241,7 +253,7 @@ test.describe('type validation', () => {
 
   test('rejects missing required fields in checkout', async ({ request }) => {
     const response = await request.post(`${API_BASE}/api/client/v1/payments/checkout`, {
-      headers: CLIENT_HEADERS,
+      headers: { ...CLIENT_HEADERS, 'Idempotency-Key': `missing-fields-checkout-${Date.now()}` },
       data: { amount: 1000 },
     });
     expect(response.status()).toBe(400);
@@ -249,11 +261,11 @@ test.describe('type validation', () => {
 
   test('rejects invalid enum value in action evaluation', async ({ request }) => {
     const response = await request.post(`${API_BASE}/api/client/v1/actions/evaluate`, {
-      headers: CLIENT_HEADERS,
+      headers: { ...CLIENT_HEADERS, 'Idempotency-Key': `bad-mode-enum-${Date.now()}` },
       data: {
         mode: 'INVALID_MODE',
         origin: 'ai',
-        tool: 'reply',
+        tool: 'knowledge.search',
         parameters: {},
       },
     });
@@ -274,7 +286,7 @@ test.describe('type validation', () => {
 test.describe('malformed input handling', () => {
   test('handles empty JSON body gracefully', async ({ request }) => {
     const response = await request.post(`${API_BASE}/api/client/v1/payments/checkout`, {
-      headers: CLIENT_HEADERS,
+      headers: { ...CLIENT_HEADERS, 'Idempotency-Key': `empty-body-${Date.now()}` },
       data: {},
     });
     expect(response.status()).toBe(400);

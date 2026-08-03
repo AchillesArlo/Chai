@@ -14,6 +14,8 @@ export abstract class LogisticsRepository {
       carrier: string;
       /** Owning contact, recorded so a customer lookup can be verified. */
       contactId?: string;
+      /** Structural link to chai.order for multi-package fulfilment (REQ-17-071). */
+      orderId?: string;
       orderReference?: string;
       trackingNumber: string;
     },
@@ -85,6 +87,9 @@ export class InMemoryLogisticsRepository extends LogisticsRepository {
     input: {
       carrier: string;
       contactId?: string;
+      // ponytail: the in-memory double keeps no order_id — nothing reads the
+      // structural order link in-process; only the Postgres path persists it.
+      orderId?: string;
       orderReference?: string;
       trackingNumber: string;
     },

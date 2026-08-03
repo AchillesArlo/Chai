@@ -36,7 +36,7 @@ describe('logistics API — read-only tracking', () => {
         'x-test-subject': 'local|client-owner',
       },
       method: 'POST',
-      payload: { carrier: 'mock-express', trackingNumber: 'TRK-100' },
+      payload: { carrier: 'mock-express', contactId: 'contact-trk100', trackingNumber: 'TRK-100' },
       url: '/api/client/v1/logistics/shipments',
     });
     expect(link.statusCode).toBe(201);
@@ -58,7 +58,7 @@ describe('logistics API — read-only tracking', () => {
     const get = await app.inject({
       headers: { 'x-test-subject': 'local|client-owner' },
       method: 'GET',
-      url: '/api/client/v1/logistics/shipments/TRK-100',
+      url: '/api/client/v1/logistics/shipments/TRK-100?contactId=contact-trk100',
     });
     expect(get.statusCode).toBe(200);
     const data = get.json().data as {

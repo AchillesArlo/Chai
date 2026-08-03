@@ -8,19 +8,23 @@ const API_BASE = process.env.API_BASE ?? 'http://127.0.0.1:3001';
  */
 test.describe('conversation flow', () => {
   test('webhook ingest creates conversation', async ({ request }) => {
+    // mock-channel (not 'mock' — see packages/connectors/src/connectors/mock-channel)
+    // expects its own snake_case envelope; external_event_id/external_user_id
+    // are required or normalizeWebhook reports verification.verified: false.
     const webhookPayload = {
-      from: '+15551234567',
-      message: 'Hello, I need help',
-      tenantId: '01890f47-9b3c-7cc2-98e8-123456789203',
+      external_event_id: `conv-flow-evt-${Date.now()}`,
+      external_message_id: `conv-flow-msg-${Date.now()}`,
+      external_user_id: '+15551234567',
+      text: 'Hello, I need help',
     };
 
     const ingest = await request.post(
-      `${API_BASE}/api/service/v1/channels/mock/webhook`,
+      `${API_BASE}/api/service/v1/channels/mock-channel/webhook`,
       { data: webhookPayload },
     );
-    expect(ingest.ok()).toBeTruthy();
+    expect(ingest.status()).toBe(201);
     const body = await ingest.json();
-    expect(body.accepted).toBe(1);
+    expect(body.data.accepted).toBe(1);
 
     // Verify conversation appears in client portal
     const conversations = await request.get(
@@ -28,21 +32,22 @@ test.describe('conversation flow', () => {
       { headers: { 'x-test-subject': 'local|client-owner' } },
     );
     expect(conversations.ok()).toBeTruthy();
-    const list = await conversations.json();
-    expect(Array.isArray(list)).toBeTruthy();
-    expect(list.length).toBeGreaterThan(0);
+    const conversationsBody = await conversations.json();
+    expect(Array.isArray(conversationsBody.data)).toBeTruthy();
+    expect(conversationsBody.data.length).toBeGreaterThan(0);
   });
 
   test('conversation transitions from AI to human mode', async ({ request }) => {
     // Create conversation via webhook
     const webhookPayload = {
-      from: '+15559876543',
-      message: 'I want to speak to a human',
-      tenantId: '01890f47-9b3c-7cc2-98e8-123456789203',
+      external_event_id: `conv-flow-evt-2-${Date.now()}`,
+      external_message_id: `conv-flow-msg-2-${Date.now()}`,
+      external_user_id: '+15559876543',
+      text: 'I want to speak to a human',
     };
 
     await request.post(
-      `${API_BASE}/api/service/v1/channels/mock/webhook`,
+      `${API_BASE}/api/service/v1/channels/mock-channel/webhook`,
       { data: webhookPayload },
     );
 
@@ -51,8 +56,8 @@ test.describe('conversation flow', () => {
       `${API_BASE}/api/client/v1/conversations`,
       { headers: { 'x-test-subject': 'local|client-owner' } },
     );
-    const list = await conversations.json();
-    const conversation = list.find(
+    const conversationsBody = await conversations.json();
+    const conversation = conversationsBody.data.find(
       (c: { id: string }) => c.id,
     );
     expect(conversation).toBeDefined();
@@ -61,34 +66,40 @@ test.describe('conversation flow', () => {
     const aiAction = await request.post(
       `${API_BASE}/api/client/v1/actions/evaluate`,
       {
-        headers: { 'x-test-subject': 'local|client-owner' },
+        headers: {
+          'Idempotency-Key': `conv-flow-ai-${Date.now()}`,
+          'x-test-subject': 'local|client-owner',
+        },
         data: {
           mode: 'AI_ACTIVE',
           origin: 'ai',
-          tool: 'reply',
+          tool: 'knowledge.search',
           parameters: {},
         },
       },
     );
     expect(aiAction.ok()).toBeTruthy();
-    const aiDecision = await aiAction.json();
-    expect(aiDecision.kind).toBe('allow');
+    const aiDecisionBody = await aiAction.json();
+    expect(aiDecisionBody.data.kind).toBe('allow');
 
     // Evaluate action: Human takeover
     const humanAction = await request.post(
       `${API_BASE}/api/client/v1/actions/evaluate`,
       {
-        headers: { 'x-test-subject': 'local|client-owner' },
+        headers: {
+          'Idempotency-Key': `conv-flow-human-${Date.now()}`,
+          'x-test-subject': 'local|client-owner',
+        },
         data: {
           mode: 'HUMAN_ACTIVE',
           origin: 'human',
-          tool: 'reply',
+          tool: 'knowledge.search',
           parameters: {},
         },
       },
     );
     expect(humanAction.ok()).toBeTruthy();
-    const humanDecision = await humanAction.json();
-    expect(humanDecision.kind).toBe('allow');
+    const humanDecisionBody = await humanAction.json();
+    expect(humanDecisionBody.data.kind).toBe('allow');
   });
 });

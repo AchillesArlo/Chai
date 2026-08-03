@@ -8,6 +8,9 @@ import {
 
 export type { InboxClaim };
 
+export * from './message-received-consumer';
+export * from './ai-reply-consumer';
+
 export interface InboxHandler {
   process(claim: InboxClaim): Promise<InboxHandlerResult>;
 }

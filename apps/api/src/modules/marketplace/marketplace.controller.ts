@@ -10,6 +10,7 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  Inject,
   ParseUUIDPipe,
   NotFoundException,
 } from '@nestjs/common';
@@ -64,7 +65,10 @@ export interface UpdateInstallationDto {
 
 @Controller('api/owner/v1/marketplace')
 export class MarketplaceController {
-  constructor(private readonly repo: MarketplaceRepository) {}
+  constructor(
+    @Inject(MarketplaceRepository)
+    private readonly repo: MarketplaceRepository,
+  ) {}
 
   // ── Webhook Subscriptions ──────────────────────────────────────────────────
 

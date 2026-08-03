@@ -18,7 +18,7 @@ async function postWebhook(
     headers: { 'x-payment-signature': signMockPaymentWebhook(raw) },
     method: 'POST',
     payload: body,
-    url: '/api/service/v1/payments/webhook',
+    url: '/api/service/v1/payments/webhook/mock-payment',
   });
 }
 import { PaymentsModule } from '../src/modules/payments/payments.module';
@@ -48,7 +48,64 @@ describe('payments API — hosted checkout', () => {
 
   afterAll(async () => app.close());
 
+  /**
+   * FASE 6 — checkout no longer accepts a client-supplied amount; it resolves
+   * one from an invoice it creates through the real order/catalog endpoints.
+   * Returns the invoiceId to pass as CreateCheckoutBody.invoiceId.
+   */
+  async function createInvoice(totalCents: number): Promise<string> {
+    const unique = `${totalCents}-${Math.random().toString(36).slice(2, 10)}`;
+    const catalog = await app.inject({
+      headers: {
+        'idempotency-key': `catalog-${unique}`,
+        'x-test-subject': 'local|client-owner',
+      },
+      method: 'POST',
+      payload: {
+        currency: 'IDR',
+        name: `Test item ${totalCents}`,
+        sku: `sku-${unique}`,
+        unitPriceCents: totalCents,
+      },
+      url: '/api/client/v1/orders/catalog',
+    });
+    const serviceItemId = (catalog.json().data as { id: string } | undefined)?.id;
+    if (!serviceItemId) {
+      throw new Error(`catalog create failed: ${catalog.statusCode} ${catalog.body}`);
+    }
+
+    const order = await app.inject({
+      headers: {
+        'idempotency-key': `order-${unique}`,
+        'x-test-subject': 'local|client-owner',
+      },
+      method: 'POST',
+      payload: { items: [{ quantity: 1, serviceItemId }] },
+      url: '/api/client/v1/orders',
+    });
+    const orderId = (order.json().data as { id: string } | undefined)?.id;
+    if (!orderId) {
+      throw new Error(`order create failed: ${order.statusCode} ${order.body}`);
+    }
+
+    const invoice = await app.inject({
+      headers: {
+        'idempotency-key': `invoice-${unique}`,
+        'x-test-subject': 'local|client-owner',
+      },
+      method: 'POST',
+      payload: {},
+      url: `/api/client/v1/orders/${orderId}/invoices`,
+    });
+    const invoiceId = (invoice.json().data as { id: string } | undefined)?.id;
+    if (!invoiceId) {
+      throw new Error(`invoice create failed: ${invoice.statusCode} ${invoice.body}`);
+    }
+    return invoiceId;
+  }
+
   it('creates a checkout and collapses duplicate idempotency keys', async () => {
+    const invoiceId = await createInvoice(75_000);
     const a = await app.inject({
       headers: {
         'idempotency-key': 'pay-http-1',
@@ -56,9 +113,8 @@ describe('payments API — hosted checkout', () => {
       },
       method: 'POST',
       payload: {
-        amount: 75_000,
-        currency: 'IDR',
         idempotencyKey: 'order-42',
+        invoiceId,
       },
       url: '/api/client/v1/payments/checkout',
     });
@@ -72,9 +128,8 @@ describe('payments API — hosted checkout', () => {
       },
       method: 'POST',
       payload: {
-        amount: 75_000,
-        currency: 'IDR',
         idempotencyKey: 'order-42',
+        invoiceId,
       },
       url: '/api/client/v1/payments/checkout',
     });
@@ -82,6 +137,7 @@ describe('payments API — hosted checkout', () => {
   });
 
   it('polls session status and accepts verified webhook (stop-on-paid)', async () => {
+    const invoiceId = await createInvoice(10_000);
     const created = await app.inject({
       headers: {
         'idempotency-key': 'pay-http-3',
@@ -89,15 +145,15 @@ describe('payments API — hosted checkout', () => {
       },
       method: 'POST',
       payload: {
-        amount: 10_000,
-        currency: 'IDR',
         idempotencyKey: 'order-webhook',
+        invoiceId,
       },
       url: '/api/client/v1/payments/checkout',
     });
     const externalId = (created.json().data as { externalId: string }).externalId;
 
     const webhook = await postWebhook(app, {
+      eventAt: new Date().toISOString(),
       externalId,
       providerEventId: 'evt-1',
       status: 'PAID',
@@ -115,7 +171,9 @@ describe('payments API — hosted checkout', () => {
 
     // false-paid / duplicate: second FAILED webhook must not downgrade PAID
     await postWebhook(app, {
+      eventAt: new Date().toISOString(),
       externalId,
+      providerEventId: 'evt-2',
       status: 'FAILED',
       tenantId: '01890f47-9b3c-7cc2-98e8-123456789203',
     });
@@ -128,13 +186,14 @@ describe('payments API — hosted checkout', () => {
   });
 
   it('rejects a webhook whose signature does not verify', async () => {
+    const invoiceId = await createInvoice(5_000);
     const created = await app.inject({
       headers: {
         'idempotency-key': 'pay-forged-1',
         'x-test-subject': 'local|client-owner',
       },
       method: 'POST',
-      payload: { amount: 5_000, currency: 'IDR', idempotencyKey: 'order-forged' },
+      payload: { idempotencyKey: 'order-forged', invoiceId },
       url: '/api/client/v1/payments/checkout',
     });
     const externalId = (created.json().data as { externalId: string }).externalId;
@@ -147,7 +206,7 @@ describe('payments API — hosted checkout', () => {
         status: 'PAID',
         tenantId: '01890f47-9b3c-7cc2-98e8-123456789203',
       },
-      url: '/api/service/v1/payments/webhook',
+      url: '/api/service/v1/payments/webhook/mock-payment',
     });
     expect(forged.statusCode).toBe(400);
     expect(forged.body).toContain('WEBHOOK_REJECTED');
@@ -169,7 +228,7 @@ describe('payments API — hosted checkout', () => {
         status: 'PAID',
         tenantId: '01890f47-9b3c-7cc2-98e8-123456789203',
       },
-      url: '/api/service/v1/payments/webhook',
+      url: '/api/service/v1/payments/webhook/mock-payment',
     });
     expect(missing.statusCode).toBe(400);
   });
@@ -186,6 +245,7 @@ describe('payments API — hosted checkout', () => {
 
   it('returns 503 when kill switch is on', async () => {
     repository.setKillSwitch(true);
+    const invoiceId = await createInvoice(1);
     const response = await app.inject({
       headers: {
         'idempotency-key': 'pay-kill',
@@ -193,13 +253,41 @@ describe('payments API — hosted checkout', () => {
       },
       method: 'POST',
       payload: {
-        amount: 1,
-        currency: 'IDR',
         idempotencyKey: 'killed',
+        invoiceId,
       },
       url: '/api/client/v1/payments/checkout',
     });
     expect(response.statusCode).toBe(503);
     repository.setKillSwitch(false);
+  });
+
+  it('rejects checkout without an order or invoice reference', async () => {
+    const response = await app.inject({
+      headers: {
+        'idempotency-key': 'pay-no-ref',
+        'x-test-subject': 'local|client-owner',
+      },
+      method: 'POST',
+      payload: { idempotencyKey: 'order-no-ref' },
+      url: '/api/client/v1/payments/checkout',
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain('CHECKOUT_REFERENCE_REQUIRED');
+  });
+
+  it('resolves checkout amount from the invoice total, not client input', async () => {
+    const invoiceId = await createInvoice(42_500);
+    const response = await app.inject({
+      headers: {
+        'idempotency-key': 'pay-amount-check',
+        'x-test-subject': 'local|client-owner',
+      },
+      method: 'POST',
+      payload: { idempotencyKey: 'order-amount-check', invoiceId },
+      url: '/api/client/v1/payments/checkout',
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().data.amount).toBe(42_500);
   });
 });

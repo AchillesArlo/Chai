@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@chai/connectors": "workspace:*",
+    "@chai/database": "workspace:*",
     "@chai/domain": "workspace:*"
   },
   "devDependencies": {

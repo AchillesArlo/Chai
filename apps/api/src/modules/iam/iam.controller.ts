@@ -25,6 +25,7 @@ import {
 } from '@chai/auth';
 
 import { RequireAudience } from '../../auth/require-audience.decorator';
+import { assertRecentAuthentication } from '../../guards/high-risk';
 import { RequirePermission } from '../../guards/require-permission.decorator';
 import { IamRepository } from './iam.repository';
 import type { InviteMemberInput, TeamMember } from './iam.repository';
@@ -136,6 +137,10 @@ export class IamController {
     @Req() request: FastifyRequest,
   ): Promise<void> {
     decide(request, 'tenant.team.manage');
+    // Removing a member is irreversible from the caller's side (they must be
+    // re-invited); require a recently-presented credential, not merely a
+    // live session (ADR-029).
+    assertRecentAuthentication(request);
     const { tenantId } = tenantScope(request);
     const revoked = await this.repository.revokeMembership(tenantId, id);
     if (!revoked) throw new NotFoundException();

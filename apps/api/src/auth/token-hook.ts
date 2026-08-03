@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import {
   type ClientRole,
   extractBearerToken,
+  SESSION_POLICIES,
   verifyAccessToken,
   type Principal,
   type PrincipalStatus,
@@ -38,7 +39,18 @@ export function registerTokenHook(
     }
     const result = await verifyAccessToken(bearer, tokenConfig);
     if (result.ok && result.claims) {
-      request.principal = principalFromClaims(result.claims);
+      const claims = result.claims;
+      const now = Math.floor(Date.now() / 1000);
+      const idleLimit =
+        claims.aud === 'owner-console'
+          ? SESSION_POLICIES.owner.idleTimeoutSeconds
+          : claims.aud === 'client-portal'
+            ? SESSION_POLICIES.client.idleTimeoutSeconds
+            : Number.POSITIVE_INFINITY;
+      if (typeof claims.iat === 'number' && now - claims.iat > idleLimit) {
+        return; // Idle timeout exceeded: fail closed
+      }
+      request.principal = principalFromClaims(claims);
     }
   });
 }

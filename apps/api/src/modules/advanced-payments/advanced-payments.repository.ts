@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import type {
   BillingCycle,
+  PaymentReconciliationRecord,
   RefundRecord,
   RefundStatus,
   SettlementRecord,
@@ -11,7 +12,7 @@ import type {
 
 /**
  * S4-1: read/write port for advanced payment concepts (subscriptions, refunds,
- * settlements). Implementations swap between InMemory (tests/no-DB) and Postgres
+ * settlements, reconciliations). Implementations swap between InMemory (tests/no-DB) and Postgres
  * via the module factory. Mirrors the Leads/Knowledge repository pattern.
  */
 export abstract class AdvancedPaymentsRepository {
@@ -46,6 +47,10 @@ export abstract class AdvancedPaymentsRepository {
   abstract getRefund(tenantId: string, refundId: string): Promise<RefundRecord | null>;
 
   abstract listSettlements(tenantId: string): Promise<SettlementRecord[]>;
+
+  abstract listReconciliations(tenantId: string): Promise<PaymentReconciliationRecord[]>;
+
+  abstract resolveReconciliation(tenantId: string, id: string, notes: string): Promise<PaymentReconciliationRecord>;
 }
 
 interface InMemorySubscription extends SubscriptionRecord {
@@ -57,6 +62,7 @@ export class InMemoryAdvancedPaymentsRepository extends AdvancedPaymentsReposito
   private readonly subscriptions = new Map<string, InMemorySubscription>();
   private readonly refunds = new Map<string, RefundRecord>();
   private readonly settlements = new Map<string, SettlementRecord[]>();
+  private readonly reconciliations = new Map<string, PaymentReconciliationRecord>();
   private readonly subscriptionIdem = new Map<string, string>();
   private readonly refundIdem = new Map<string, string>();
 
@@ -165,6 +171,29 @@ export class InMemoryAdvancedPaymentsRepository extends AdvancedPaymentsReposito
     return this.settlements.get(tenantId) ?? [];
   }
 
+  override async listReconciliations(tenantId: string): Promise<PaymentReconciliationRecord[]> {
+    return [...this.reconciliations.values()].filter((row) => row.tenantId === tenantId);
+  }
+
+  override async resolveReconciliation(
+    tenantId: string,
+    id: string,
+    notes: string,
+  ): Promise<PaymentReconciliationRecord> {
+    const row = this.reconciliations.get(id);
+    if (!row || row.tenantId !== tenantId) {
+      throw new Error('RECONCILIATION_NOT_FOUND');
+    }
+    const updated: PaymentReconciliationRecord = {
+      ...row,
+      resolutionNotes: notes,
+      status: 'RESOLVED',
+      updatedAt: new Date(),
+    };
+    this.reconciliations.set(id, updated);
+    return updated;
+  }
+
   private toSubscription(row: InMemorySubscription): SubscriptionRecord {
     const { cancelled, ...rest } = row;
     void cancelled;
@@ -174,6 +203,7 @@ export class InMemoryAdvancedPaymentsRepository extends AdvancedPaymentsReposito
 
 export type {
   BillingCycle,
+  PaymentReconciliationRecord,
   RefundRecord,
   RefundStatus,
   SettlementRecord,

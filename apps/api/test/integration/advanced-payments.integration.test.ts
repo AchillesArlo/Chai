@@ -8,7 +8,7 @@ import { seedApiRuntime } from '../../src/database/seed-runtime';
 import { PostgresAdvancedPaymentsRepository } from '../../src/modules/advanced-payments/postgres-advanced-payments.repository';
 import { PostgresPaymentsRepository } from '../../src/modules/payments/postgres-payments.repository';
 
-describe('API Postgres advanced-payments repository (S4-1)', () => {
+describe('API Postgres advanced-payments repository (S4-1 / FASE 8)', () => {
   const adminUrl = inject('adminDatabaseUrl') as string;
   const runtimeUrl = inject('runtimeDatabaseUrl') as string;
   let admin: ReturnType<typeof createDatabase>;
@@ -80,7 +80,7 @@ describe('API Postgres advanced-payments repository (S4-1)', () => {
     expect(cross).toEqual([]);
   });
 
-  it('processes a refund against an existing payment and reads it back', async () => {
+  it('processes a refund against an existing payment and emits audit and event (REQ-17-027)', async () => {
     const advanced = new PostgresAdvancedPaymentsRepository(runtime);
     const payments = new PostgresPaymentsRepository(runtime);
 
@@ -114,6 +114,21 @@ describe('API Postgres advanced-payments repository (S4-1)', () => {
     const forPayment = await advanced.listRefundsForPayment(API_TENANT_ID, paymentIdNonNull);
     expect(forPayment.some((r) => r.id === refund.id)).toBe(true);
 
+    // Verify audit entry and outbox event were committed
+    const auditRows = await admin<Array<{ action: string }>>`
+      SELECT action FROM chai.audit_log
+      WHERE tenant_id = ${API_TENANT_ID} AND resource_id = ${refund.id}
+    `;
+    expect(auditRows.length).toBeGreaterThan(0);
+    expect(auditRows[0]?.action).toBe('payment.refund_created');
+
+    const outboxRows = await admin<Array<{ event_type: string }>>`
+      SELECT event_type FROM chai.outbox_event
+      WHERE tenant_id = ${API_TENANT_ID} AND aggregate_id = ${paymentIdNonNull}
+        AND event_type = 'payment.refunded'
+    `;
+    expect(outboxRows.length).toBeGreaterThan(0);
+
     const idempotent = await advanced.processRefund(API_TENANT_ID, {
       amountCents: 5_000,
       idempotencyKey: 'refund-s4-1-1',
@@ -121,6 +136,41 @@ describe('API Postgres advanced-payments repository (S4-1)', () => {
       reason: 'partial refund per customer request',
     });
     expect(idempotent.id).toBe(refund.id);
+  });
+
+  it('records, lists, and resolves reconciliation mismatches (REQ-17-065)', async () => {
+    const advanced = new PostgresAdvancedPaymentsRepository(runtime);
+
+    // Insert a test discrepancy into chai.payment_reconciliation
+    const reconId = '01890f47-9b3c-7cc2-98e8-0000000000e1';
+    await admin`
+      INSERT INTO chai.payment_reconciliation (
+        id, tenant_id, provider, external_id, discrepancy_type, local_status, provider_status
+      ) VALUES (
+        ${reconId}, ${API_TENANT_ID}, 'midtrans', 'ext-recon-123', 'STATUS_MISMATCH', 'PENDING', 'PAID'
+      )
+      ON CONFLICT (id) DO NOTHING
+    `;
+
+    const items = await advanced.listReconciliations(API_TENANT_ID);
+    const target = items.find((i) => i.id === reconId);
+    expect(target).toBeTruthy();
+    expect(target?.status).toBe('OPEN');
+
+    const resolved = await advanced.resolveReconciliation(
+      API_TENANT_ID,
+      reconId,
+      'Resolved after manual verification of Midtrans statement',
+    );
+    expect(resolved.status).toBe('RESOLVED');
+    expect(resolved.resolutionNotes).toContain('manual verification');
+
+    // Verify audit entry for resolution
+    const auditRows = await admin<Array<{ action: string }>>`
+      SELECT action FROM chai.audit_log
+      WHERE tenant_id = ${API_TENANT_ID} AND resource_id = ${reconId}
+    `;
+    expect(auditRows.some((a) => a.action === 'payment.reconciliation_resolved')).toBe(true);
   });
 
   it('returns an empty settlement list for a tenant with no settlements', async () => {

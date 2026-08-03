@@ -4,12 +4,15 @@ import {
   DATABASE,
   type DatabaseHandle,
 } from '../../database/database.module';
+import { ActionAppointmentPort } from '../shared/action-tool.port';
+import { LeadsActionAdapter } from './leads-action.adapter';
 import { LeadsController } from './leads.controller';
 import { InMemoryLeadsRepository, LeadsRepository } from './leads.repository';
 import { PostgresLeadsRepository } from './postgres-leads.repository';
 
 @Module({
   controllers: [LeadsController],
+  exports: [LeadsRepository, ActionAppointmentPort],
   providers: [
     {
       inject: [DATABASE],
@@ -20,6 +23,7 @@ import { PostgresLeadsRepository } from './postgres-leads.repository';
         return new InMemoryLeadsRepository();
       },
     },
+    { provide: ActionAppointmentPort, useClass: LeadsActionAdapter },
   ],
 })
 // NestJS discovers module metadata from this decorated class.

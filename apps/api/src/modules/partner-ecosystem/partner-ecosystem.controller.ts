@@ -1,14 +1,139 @@
 import { TenantId } from '../../common/tenant-id.decorator';
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Inject, Param, Query, UseGuards } from '@nestjs/common';
+import { IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString } from 'class-validator';
 import { PartnerEcosystemRepository } from './partner-ecosystem.repository';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { RequirePermission } from '../../guards/require-permission.decorator';
 import type { Partner, ApiKey, ApiVersion, SdkRelease } from './partner-ecosystem.repository';
 
+class CreatePartnerDto {
+  @IsString()
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsString()
+  contactEmail!: string;
+
+  @IsIn(['pending', 'approved', 'suspended', 'revoked'])
+  status!: 'pending' | 'approved' | 'suspended' | 'revoked';
+}
+
+class UpdatePartnerDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsOptional()
+  @IsString()
+  contactEmail?: string;
+
+  @IsOptional()
+  @IsIn(['pending', 'approved', 'suspended', 'revoked'])
+  status?: 'pending' | 'approved' | 'suspended' | 'revoked';
+}
+
+class CreateApiKeyDto {
+  @IsString()
+  partnerId!: string;
+
+  @IsString()
+  name!: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  scopes!: string[];
+
+  @IsInt()
+  rateLimitPerMinute!: number;
+
+  @IsOptional()
+  @IsString()
+  expiresAt?: string | null;
+
+  @IsBoolean()
+  isActive!: boolean;
+}
+
+class CreateApiVersionDto {
+  @IsString()
+  version!: string;
+
+  @IsIn(['active', 'deprecated', 'sunset'])
+  status!: 'active' | 'deprecated' | 'sunset';
+
+  @IsString()
+  releaseDate!: string;
+
+  @IsOptional()
+  @IsString()
+  sunsetDate?: string | null;
+
+  @IsOptional()
+  @IsString()
+  changelog?: string | null;
+}
+
+class UpdateApiVersionDto {
+  @IsOptional()
+  @IsString()
+  version?: string;
+
+  @IsOptional()
+  @IsIn(['active', 'deprecated', 'sunset'])
+  status?: 'active' | 'deprecated' | 'sunset';
+
+  @IsOptional()
+  @IsString()
+  releaseDate?: string;
+
+  @IsOptional()
+  @IsString()
+  sunsetDate?: string | null;
+
+  @IsOptional()
+  @IsString()
+  changelog?: string | null;
+}
+
+class CreateSdkReleaseDto {
+  @IsString()
+  apiVersionId!: string;
+
+  @IsIn(['python', 'nodejs', 'go', 'java', 'ruby'])
+  language!: 'python' | 'nodejs' | 'go' | 'java' | 'ruby';
+
+  @IsString()
+  version!: string;
+
+  @IsString()
+  packageUrl!: string;
+
+  @IsOptional()
+  @IsString()
+  repositoryUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  releaseNotes?: string | null;
+
+  @IsString()
+  publishedAt!: string;
+}
+
 @Controller('api/owner/v1/partner-ecosystem')
 @UseGuards(TenantGuard)
 export class PartnerEcosystemController {
-  constructor(private readonly repo: PartnerEcosystemRepository) {}
+  constructor(
+    @Inject(PartnerEcosystemRepository)
+    private readonly repo: PartnerEcosystemRepository,
+  ) {}
 
   // Partner endpoints
   @Get('partners')
@@ -30,9 +155,9 @@ export class PartnerEcosystemController {
   @RequirePermission('platform.access.manage')
   async createPartner(
     @TenantId() tenantId: string,
-    @Body() partner: Omit<Partner, 'id' | 'createdAt' | 'updatedAt'>,
+    @Body() partner: CreatePartnerDto,
   ): Promise<Partner> {
-    return this.repo.createPartner(tenantId, partner);
+    return this.repo.createPartner(tenantId, partner as Omit<Partner, 'id' | 'createdAt' | 'updatedAt'>);
   }
 
   @Put('partners/:id')
@@ -40,7 +165,7 @@ export class PartnerEcosystemController {
   async updatePartner(
     @TenantId() tenantId: string,
     @Param('id') id: string,
-    @Body() update: Partial<Partner>,
+    @Body() update: UpdatePartnerDto,
   ): Promise<Partner> {
     return this.repo.updatePartner(tenantId, id, update);
   }
@@ -59,9 +184,9 @@ export class PartnerEcosystemController {
   @RequirePermission('platform.access.manage')
   async createApiKey(
     @TenantId() tenantId: string,
-    @Body() key: Omit<ApiKey, 'id' | 'createdAt' | 'updatedAt' | 'keyPrefix' | 'lastUsedAt'>,
+    @Body() key: CreateApiKeyDto,
   ) {
-    return this.repo.createApiKey(tenantId, key);
+    return this.repo.createApiKey(tenantId, key as Omit<ApiKey, 'id' | 'createdAt' | 'updatedAt' | 'keyPrefix' | 'lastUsedAt'>);
   }
 
   @Delete('api-keys/:id')
@@ -89,16 +214,16 @@ export class PartnerEcosystemController {
   @Post('api-versions')
   @RequirePermission('platform.settings.manage')
   async createApiVersion(
-    @Body() version: Omit<ApiVersion, 'id' | 'createdAt' | 'updatedAt'>,
+    @Body() version: CreateApiVersionDto,
   ): Promise<ApiVersion> {
-    return this.repo.createApiVersion(version);
+    return this.repo.createApiVersion(version as Omit<ApiVersion, 'id' | 'createdAt' | 'updatedAt'>);
   }
 
   @Put('api-versions/:id')
   @RequirePermission('platform.settings.manage')
   async updateApiVersion(
     @Param('id') id: string,
-    @Body() update: Partial<ApiVersion>,
+    @Body() update: UpdateApiVersionDto,
   ): Promise<ApiVersion> {
     return this.repo.updateApiVersion(id, update);
   }
@@ -116,9 +241,9 @@ export class PartnerEcosystemController {
   @Post('sdk-releases')
   @RequirePermission('platform.settings.manage')
   async createSdkRelease(
-    @Body() release: Omit<SdkRelease, 'id'>,
+    @Body() release: CreateSdkReleaseDto,
   ): Promise<SdkRelease> {
-    return this.repo.createSdkRelease(release);
+    return this.repo.createSdkRelease(release as Omit<SdkRelease, 'id'>);
   }
 
   // Rate Limit Usage endpoints

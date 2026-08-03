@@ -12,6 +12,10 @@ import {
 } from './credential-store.di';
 import { OwnerMfaController } from './mfa.controller';
 import {
+  RefreshTokenStoreToken,
+  createRefreshTokenStore,
+} from './refresh-token-store.di';
+import {
   TOKEN_CONFIG_TOKEN,
   createTokenConfigProvider,
 } from './token-config.di';
@@ -38,11 +42,16 @@ export { AudienceGuard as AUDIENCE_GUARD };
       useFactory: (database: DatabaseHandle) => createCredentialStore(database),
     },
     {
+      provide: RefreshTokenStoreToken,
+      inject: [DATABASE],
+      useFactory: (database: DatabaseHandle) => createRefreshTokenStore(database),
+    },
+    {
       provide: TOKEN_CONFIG_TOKEN,
       useFactory: createTokenConfigProvider,
     },
   ],
-  exports: [CredentialStoreToken, TOKEN_CONFIG_TOKEN, AudienceGuard],
+  exports: [CredentialStoreToken, RefreshTokenStoreToken, TOKEN_CONFIG_TOKEN, AudienceGuard],
 })
 // NestJS discovers module metadata from this decorated class.
 export class AuthModule {}

@@ -1,14 +1,47 @@
 import { TenantId } from '../../common/tenant-id.decorator';
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Inject, Param, UseGuards } from '@nestjs/common';
+import { IsInt, IsObject, IsOptional, IsString } from 'class-validator';
 import { ContactSegmentRepository } from './contact-segment.repository';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { RequirePermission } from '../../guards/require-permission.decorator';
-import type { ContactSegment } from './contact-segment.repository';
+
+class CreateContactSegmentDto {
+  @IsString()
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  description!: string | null;
+
+  @IsObject()
+  filterRules!: Record<string, unknown>;
+}
+
+class UpdateContactSegmentDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  filterRules?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsInt()
+  memberCount?: number;
+}
 
 @Controller('api/client/v1/contact-segments')
 @UseGuards(TenantGuard)
 export class ContactSegmentController {
-  constructor(private readonly repo: ContactSegmentRepository) {}
+  constructor(
+    @Inject(ContactSegmentRepository)
+    private readonly repo: ContactSegmentRepository,
+  ) {}
 
   @Get()
   @RequirePermission('contact.read')
@@ -20,11 +53,11 @@ export class ContactSegmentController {
 
   @Post()
   @RequirePermission('contact.manage')
-  async create(@TenantId() tenantId: string, @Body() segment: Omit<ContactSegment, 'id' | 'createdAt' | 'updatedAt' | 'memberCount'>) { return this.repo.createSegment(tenantId, segment); }
+  async create(@TenantId() tenantId: string, @Body() segment: CreateContactSegmentDto) { return this.repo.createSegment(tenantId, { ...segment, tenantId }); }
 
   @Put(':id')
   @RequirePermission('contact.manage')
-  async update(@TenantId() tenantId: string, @Param('id') id: string, @Body() update: Partial<ContactSegment>) { return this.repo.updateSegment(tenantId, id, update); }
+  async update(@TenantId() tenantId: string, @Param('id') id: string, @Body() update: UpdateContactSegmentDto) { return this.repo.updateSegment(tenantId, id, update); }
 
   @Delete(':id')
   @RequirePermission('contact.manage')

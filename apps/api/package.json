@@ -5,8 +5,8 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "build": "esbuild src/main.ts --bundle --platform=node --format=esm --sourcemap --outfile=dist/main.js --banner:js=\"import { createRequire as __chaiCreateRequire } from 'node:module'; const require = __chaiCreateRequire(import.meta.url);\" --alias:@chai/auth/server=../../packages/auth/src/server.ts --alias:@chai/auth=../../packages/auth/src/index.ts --alias:@chai/contracts=../../packages/contracts/src/index.ts --alias:@chai/domain=../../packages/domain/src/index.ts --alias:@chai/database=../../packages/database/src/index.ts --alias:@chai/connector-sdk=../../packages/connector-sdk/src/index.ts --alias:@chai/connectors/mock-channel=../../packages/connectors/src/connectors/mock-channel/index.ts --alias:@chai/connectors/whatsapp-meta-sandbox=../../packages/connectors/src/connectors/whatsapp-meta-sandbox/index.ts --alias:@chai/connectors/mock-calendar=../../packages/connectors/src/connectors/mock-calendar/index.ts --alias:@chai/connectors/mock-ai=../../packages/connectors/src/connectors/mock-ai/index.ts --alias:@chai/connectors/mock-shipping=../../packages/connectors/src/connectors/mock-shipping/index.ts --alias:@chai/connectors/mock-payment=../../packages/connectors/src/connectors/mock-payment/index.ts --alias:@chai/realtime-gateway=../../apps/realtime-gateway/src/index.ts --external:@fastify/helmet --external:@fastify/rate-limit --external:@nestjs/common --external:@nestjs/core --external:@nestjs/platform-fastify --external:@nestjs/swagger --external:fastify --external:class-transformer --external:class-validator --external:reflect-metadata --external:rxjs --external:uuid",
-    "dev": "tsx watch src/main.ts",
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/dev.mjs",
     "lint": "eslint src test vitest.e2e.config.ts vitest.integration.config.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc --project tsconfig.json --noEmit",
@@ -40,11 +40,11 @@
   "devDependencies": {
     "@nestjs/testing": "11.1.28",
     "@opentelemetry/sdk-trace-base": "2.10.0",
+    "@swc/core": "1.15.47",
     "@testcontainers/postgresql": "12.0.4",
     "@types/node": "24.13.3",
     "esbuild": "0.28.1",
     "postgres": "3.4.8",
-    "tsx": "4.23.1",
     "typescript": "6.0.3",
     "vitest": "4.1.10"
   }

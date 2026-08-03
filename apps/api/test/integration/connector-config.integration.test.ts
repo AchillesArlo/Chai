@@ -46,7 +46,8 @@ describe('API Postgres connector-config repository (Fase 5.3)', () => {
       rotatedAt: null,
       rotatedBy: null,
       secretKey: 'api_key',
-      secretValueEncrypted: Buffer.from('encrypted-value'),
+      secretValueRef: 'v1:tenant-a:api_key:1',
+      secretValueLegacyEncrypted: null,
       secretVersion: 1,
     });
 
@@ -59,7 +60,7 @@ describe('API Postgres connector-config repository (Fase 5.3)', () => {
 
     const secrets = await reader.listSecrets(API_TENANT_ID, config.id);
     expect(secrets.some((row) => row.id === secret.id)).toBe(true);
-    expect(secrets[0]?.secretValueEncrypted.toString()).toBe('encrypted-value');
+    expect(secrets[0]?.secretValueRef).toBe('v1:tenant-a:api_key:1');
 
     const updated = await reader.updateConfig(API_TENANT_ID, config.id, {
       lastTestedAt: new Date().toISOString(),
@@ -106,7 +107,8 @@ describe('API Postgres connector-config repository (Fase 5.3)', () => {
       rotatedAt: null,
       rotatedBy: null,
       secretKey: 'bot_token',
-      secretValueEncrypted: Buffer.from('secret'),
+      secretValueRef: 'v1:tenant-a:bot_token:1',
+      secretValueLegacyEncrypted: null,
       secretVersion: 1,
     });
     // Tenant B cannot see tenant A's secrets even by the parent config id,

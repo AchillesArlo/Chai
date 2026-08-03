@@ -42,7 +42,7 @@ describe('optional modules are closed until entitled', () => {
         'x-test-subject': 'local|client-owner',
       },
       method: 'POST',
-      payload: { amount: 10_000, currency: 'IDR', idempotencyKey: 'ent-1' },
+      payload: { idempotencyKey: 'ent-1', invoiceId: 'irrelevant-because-entitlement-denied-first' },
       url: '/api/client/v1/payments/checkout',
     });
 

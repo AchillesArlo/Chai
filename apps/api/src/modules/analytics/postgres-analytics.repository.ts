@@ -6,7 +6,10 @@ import {
   averageCsat,
   bookingExceptionRate,
   conversionRate,
+  inboundMessageVolume,
+  newConversationRate,
   qualificationRate,
+  readMessageFacts,
   type BookingFact,
   type ConversationFact,
   type LeadFact,
@@ -16,7 +19,10 @@ import {
   DATABASE,
   SERVICE_PRINCIPAL_ID,
 } from '../../database/database.module';
-import type { OutcomesDashboard } from './analytics.repository';
+import type {
+  MessageOutcomesDashboard,
+  OutcomesDashboard,
+} from './analytics.repository';
 import { AnalyticsRepository } from './analytics.repository';
 
 interface ConversationRow {
@@ -89,6 +95,27 @@ export class PostgresAnalyticsRepository extends AnalyticsRepository {
           bookingExceptionRate: bookingExceptionRate(bookingFacts, sourceUntil),
           conversionRate: conversionRate(leadFacts, sourceUntil),
           qualificationRate: qualificationRate(leadFacts, sourceUntil),
+          sourceUntil: sourceUntil.toISOString(),
+        };
+      },
+    );
+  }
+
+  override async getMessageOutcomes(
+    tenantId: string,
+    sourceUntil: Date = new Date(),
+  ): Promise<MessageOutcomesDashboard> {
+    return withTenantTransaction(
+      this.database,
+      { principalId: SERVICE_PRINCIPAL_ID, tenantId },
+      async (tx) => {
+        // Reads the fact table, not chai.message — analytics stays off the
+        // operational path (FASE 32). The facts are populated by the FASE 30
+        // consumer of `message.received`.
+        const facts = await readMessageFacts(tx);
+        return {
+          inboundMessageVolume: inboundMessageVolume(facts, sourceUntil),
+          newConversationRate: newConversationRate(facts, sourceUntil),
           sourceUntil: sourceUntil.toISOString(),
         };
       },

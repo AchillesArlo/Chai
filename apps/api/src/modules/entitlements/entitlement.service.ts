@@ -37,6 +37,9 @@ export const OPTIONAL_CAPABILITIES = [
   'advanced_analytics',
   'whatsapp_meta_direct',
   'instagram',
+  // Unofficial WhatsApp Web (WAHA) — FASE 25. Separate from whatsapp_meta_direct,
+  // default OFF; a tenant without it gets FEATURE_NOT_ENABLED for the community channel.
+  'community_channel',
 ] as const;
 
 export type Capability =

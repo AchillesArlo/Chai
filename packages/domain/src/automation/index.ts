@@ -5,3 +5,5 @@ export * from './versioning';
 export * from './library/triggers';
 export * from './library/actions';
 export * from './library/conditions';
+export * from './stop-reasons';
+export * from './templates';

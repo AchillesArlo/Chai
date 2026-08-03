@@ -4,6 +4,12 @@
 > nol total (image dibangun ulang tanpa cache, volume database benar-benar
 > kosong) dan setiap langkah di bawah diverifikasi sendiri lewat perintah
 > nyata — bukan disalin dari dokumentasi lama.
+>
+> **Diperbarui 2026-07-31** setelah FASE 1–6 remediasi selesai. Perubahan yang
+> memengaruhi cara pakai: alur pembayaran sekarang **wajib** lewat katalog →
+> order → invoice (tidak bisa lagi mengirim `amount` langsung). Lihat
+> bagian **4.1 Alur pembayaran** di bawah. Bagian lain sudah diverifikasi
+> masih akurat.
 
 ## Apa ini
 
@@ -116,6 +122,37 @@ Setelah login, kamu diarahkan ke inbox. Menu utama yang tersedia:
 - **Settings** — konfigurasi tenant.
 - **Analytics** — metrik operasional.
 
+### 4.1 Alur pembayaran (berubah sejak 2026-07-31)
+
+Pembayaran **tidak bisa** dibuat dengan menyebut jumlah uang langsung. Nilainya
+selalu dihitung server dari data bisnis yang tersimpan. Ini disengaja: mencegah
+siapa pun (termasuk agen AI) menentukan harga sendiri.
+
+Urutannya wajib seperti ini:
+
+1. **Buat item katalog** — nama barang/jasa beserta harga satuannya.
+2. **Buat order** — pilih item katalog + jumlahnya. Server menghitung total dan
+   menyimpan *snapshot* harga saat itu, jadi order lama tidak berubah kalau
+   harga katalog diubah nanti.
+3. **Terbitkan invoice** dari order itu. Totalnya diambil dari order dan tidak
+   bisa diubah setelah diterbitkan.
+4. **Buat checkout** dengan menyebut invoice tersebut. Nilai tagihan diambil
+   dari invoice.
+
+Kalau checkout dibuat tanpa menyebut invoice atau order, permintaan itu ditolak
+dengan pesan `CHECKOUT_REFERENCE_REQUIRED`. Itu perilaku yang benar, bukan bug.
+
+Endpoint terkait, kalau kamu mengaksesnya lewat API langsung
+(semua butuh header `Idempotency-Key` untuk operasi tulis):
+
+| Tujuan | Endpoint |
+|---|---|
+| Lihat/buat item katalog | `GET` / `POST /api/client/v1/orders/catalog` |
+| Buat order | `POST /api/client/v1/orders` |
+| Lihat order | `GET /api/client/v1/orders/:id` |
+| Terbitkan invoice | `POST /api/client/v1/orders/:id/invoices` |
+| Buat checkout | `POST /api/client/v1/payments/checkout` (kirim `invoiceId`) |
+
 ## 5. Memakai Owner Console
 
 Setelah login, kamu di halaman overview platform. Menu utama:
@@ -172,8 +209,25 @@ itu satu-satunya cara masalahnya bisa dilacak lebih lanjut.
   di `.env.example` adalah nilai contoh (`change-me-...`), wajib diganti
   sebelum deploy produksi sungguhan.
 - Belum ada CI yang berjalan otomatis di repo ini; hijau/merahnya gerbang
-  saat ini hanya terverifikasi di mesin lokal.
+  saat ini hanya terverifikasi di mesin lokal (`git remote` masih kosong).
+- **Agen AI belum membalas pelanggan secara otomatis.** Yang berjalan hari ini
+  adalah inbox omnichannel (pesan masuk tercatat, agen manusia membalas) plus
+  eksekusi tool lewat policy engine. Modul AI (`services/ai-gateway`) sudah
+  lengkap tetapi belum tersambung ke alur pesan — ini gap yang sudah
+  didokumentasikan dan dijadwalkan sebagai FASE 31.
+- **Lampiran (attachment) belum discan malware.** Kolom `scan_status` ada di
+  database tetapi belum ada scanner yang mengisinya. Jangan mengandalkan status
+  itu sebagai jaminan keamanan berkas sampai FASE 28 selesai.
 - Sejumlah modul (AI operations, automation, beberapa sub-fitur marketplace)
   fungsional secara backend tapi belum diuji menyeluruh lewat browser untuk
   setiap alur kerja — lihat `docs/testing/2026-07-27-instruksi-testing-website.md`
-  kalau kamu ingin melakukan pengujian sistematis.
+  kalau kamu ingin melakukan pengujian sistematis lewat UI.
+
+## Dokumen terkait
+
+| Kebutuhan | Dokumen |
+|---|---|
+| Menguji seluruh fitur lewat browser | `docs/testing/2026-07-27-instruksi-testing-website.md` |
+| Memverifikasi pekerjaan agent pengembang | `docs/testing/2026-07-31-panduan-agent-penguji.md` |
+| Status remediasi per fase | `docs/plans/2026-07-29-rencana-penyelesaian-lengkap.md` |
+| Daftar celah yang diketahui | `docs/audit/2026-07-31/TEMUAN-AUDIT-LANJUTAN.md` |

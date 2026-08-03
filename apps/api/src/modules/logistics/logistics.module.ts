@@ -4,6 +4,8 @@ import {
   DATABASE,
   type DatabaseHandle,
 } from '../../database/database.module';
+import { ActionShipmentPort } from '../shared/action-tool.port';
+import { LogisticsActionAdapter } from './logistics-action.adapter';
 import { LogisticsController } from './logistics.controller';
 import {
   InMemoryLogisticsRepository,
@@ -13,7 +15,7 @@ import { PostgresLogisticsRepository } from './postgres-logistics.repository';
 
 @Module({
   controllers: [LogisticsController],
-  exports: [LogisticsRepository],
+  exports: [LogisticsRepository, ActionShipmentPort],
   providers: [
     // ponytail: immutable tracking table + polling worker later.
     {
@@ -24,6 +26,7 @@ import { PostgresLogisticsRepository } from './postgres-logistics.repository';
           ? new PostgresLogisticsRepository(database)
           : new InMemoryLogisticsRepository(),
     },
+    { provide: ActionShipmentPort, useClass: LogisticsActionAdapter },
   ],
 })
 // NestJS discovers module metadata from this decorated class.

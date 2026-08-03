@@ -11,6 +11,8 @@ import type {
   TrackingEvent,
 } from '@chai/connectors/mock-shipping';
 
+import { commitBusinessMutation } from '@chai/domain';
+
 import { DATABASE, SERVICE_PRINCIPAL_ID } from '../../database/database.module';
 import { LogisticsRepository } from './logistics.repository';
 
@@ -24,6 +26,7 @@ interface ShipmentRow {
   last_synced_at: Date;
   contact_id: string | null;
   order_reference: string | null;
+  order_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -49,6 +52,7 @@ export class PostgresLogisticsRepository extends LogisticsRepository {
     input: {
       carrier: string;
       contactId?: string;
+      orderId?: string;
       orderReference?: string;
       trackingNumber: string;
     },
@@ -76,30 +80,54 @@ export class PostgresLogisticsRepository extends LogisticsRepository {
             eventId: randomUUID(),
           },
         ];
-        await tx`
-          INSERT INTO chai.shipment
-            (id, tenant_id, carrier, tracking_number, status, events,
-             last_synced_at, contact_id, order_reference)
-          VALUES
-            (${id}, ${tenantId}, ${input.carrier}, ${input.trackingNumber}, 'LINKED',
-             ${tx.json(events as unknown as Parameters<typeof tx.json>[0])}::jsonb, ${linkedAt},
-             ${input.contactId ?? null}, ${input.orderReference ?? null})
-        `;
-        return {
-          carrier: input.carrier,
-          events: [
-            {
-              at: linkedAt,
-              code: 'LINKED',
-              description: 'Shipment linked',
-              eventId: events[0]?.eventId as string,
-            },
-          ],
-          lastSyncedAt: linkedAt,
-          status: 'LINKED',
+        return commitBusinessMutation(tx, {
           tenantId,
-          trackingNumber: input.trackingNumber,
-        };
+          mutate: async () => {
+            await tx`
+              INSERT INTO chai.shipment
+                (id, tenant_id, carrier, tracking_number, status, events,
+                 last_synced_at, contact_id, order_reference, order_id)
+              VALUES
+                (${id}, ${tenantId}, ${input.carrier}, ${input.trackingNumber}, 'LINKED',
+                 ${tx.json(events as unknown as Parameters<typeof tx.json>[0])}::jsonb, ${linkedAt},
+                 ${input.contactId ?? null}, ${input.orderReference ?? null}, ${input.orderId ?? null})
+            `;
+            return {
+              carrier: input.carrier,
+              events: [
+                {
+                  at: linkedAt,
+                  code: 'LINKED' as const,
+                  description: 'Shipment linked',
+                  eventId: events[0]?.eventId as string,
+                },
+              ],
+              lastSyncedAt: linkedAt,
+              status: 'LINKED' as const,
+              tenantId,
+              trackingNumber: input.trackingNumber,
+            };
+          },
+          describe: (record) => ({
+            audit: {
+              action: 'shipment.linked',
+              actorId: SERVICE_PRINCIPAL_ID,
+              metadata: { carrier: input.carrier, trackingNumber: input.trackingNumber },
+              resourceId: id,
+              resourceType: 'shipment',
+            },
+            events: [
+              {
+                aggregateId: id,
+                aggregateType: 'shipment',
+                aggregateVersion: 1,
+                eventType: 'shipment.created',
+                partitionKey: input.trackingNumber,
+                payload: { carrier: input.carrier, status: record.status, trackingNumber: input.trackingNumber },
+              },
+            ],
+          }),
+        });
       },
     );
   }
@@ -253,20 +281,44 @@ export class PostgresLogisticsRepository extends LogisticsRepository {
         const latest = events[events.length - 1];
         const status = (latest?.code ?? current.status) as ShipmentMilestone;
 
-        await tx`
-          UPDATE chai.shipment
-          SET events = ${tx.json(events as unknown as Parameters<typeof tx.json>[0])}::jsonb,
-              status = ${status},
-              last_synced_at = now(),
-              updated_at = now()
-          WHERE id = ${current.id}
-        `;
-        return this.mapRecord({
-          ...current,
-          events,
-          status,
-          last_synced_at: new Date(),
-          updated_at: new Date(),
+        return commitBusinessMutation(tx, {
+          tenantId,
+          mutate: async () => {
+            await tx`
+              UPDATE chai.shipment
+              SET events = ${tx.json(events as unknown as Parameters<typeof tx.json>[0])}::jsonb,
+                  status = ${status},
+                  last_synced_at = now(),
+                  updated_at = now()
+              WHERE id = ${current.id}
+            `;
+            return this.mapRecord({
+              ...current,
+              events,
+              status,
+              last_synced_at: new Date(),
+              updated_at: new Date(),
+            });
+          },
+          describe: (updatedRecord) => ({
+            audit: {
+              action: 'shipment.event_appended',
+              actorId: SERVICE_PRINCIPAL_ID,
+              metadata: { carrier: current.carrier, eventCode: event.code, trackingNumber: current.tracking_number },
+              resourceId: current.id,
+              resourceType: 'shipment',
+            },
+            events: [
+              {
+                aggregateId: current.id,
+                aggregateType: 'shipment',
+                aggregateVersion: 1,
+                eventType: 'shipment.updated',
+                partitionKey: current.tracking_number,
+                payload: { carrier: current.carrier, eventCode: event.code, status: updatedRecord.status, trackingNumber: current.tracking_number },
+              },
+            ],
+          }),
         });
       },
     );

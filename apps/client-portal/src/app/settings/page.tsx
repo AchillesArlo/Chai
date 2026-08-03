@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 
 import { AppShell, StatusBadge } from '@chai/ui';
+import { SecretInput } from '../../components/SecretInput';
 import { CLIENT_PORTAL_NAVIGATION } from '../../config/navigation';
 
 export default function SettingsPage() {
@@ -345,23 +346,17 @@ export default function SettingsPage() {
                   />
                 </div>
 
-                <div>
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-semibold text-slate-700">Kunci Rahasia Client Secret (Outbound API)</label>
-                    <button
-                      onClick={() => copyToClipboard('chai_sec_live_98a7b6c5d4e3f210', 'secret')}
-                      className="text-xs font-semibold text-brand-600 hover:underline flex items-center gap-1"
-                    >
-                      <Copy className="size-3" /> {copiedKey === 'secret' ? 'Tersalin!' : 'Salin Kunci Rahasia'}
-                    </button>
-                  </div>
-                  <input
-                    type="password"
-                    readOnly
-                    value="chai_sec_live_98a7b6c5d4e3f210"
-                    className="mt-1 w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-mono text-slate-800"
-                  />
-                </div>
+                <SecretInput
+                  label="Kunci Rahasia Client Secret (Outbound API)"
+                  hasExistingSecret
+                  description="Nilai secret tidak dapat ditampilkan setelah disimpan. Gunakan Rotasi untuk membuat nilai baru."
+                  onSave={async (plaintext) => {
+                    // REQ-04-010: secret tidak pernah di-reveal setelah save.
+                    // Ponytail: endpoint rotate menyusul saat API konektor
+                    // terhubung; saat ini hanya konfirmasi state lokal.
+                    if (!plaintext) throw new Error('Nilai secret tidak boleh kosong.');
+                  }}
+                />
 
                 <div>
                   <div className="flex items-center justify-between">

@@ -49,11 +49,17 @@ describe('payment webhook commits mutation + audit + event together (REQ-17-009)
     const externalId = created.externalId;
 
     const raw = new TextEncoder().encode(
-      JSON.stringify({ externalId, status: 'PAID', tenantId: API_TENANT_ID }),
+      JSON.stringify({
+        externalId,
+        status: 'PAID',
+        tenantId: API_TENANT_ID,
+        eventAt: new Date().toISOString(),
+        providerEventId: `evt-req17009-${Date.now()}`,
+      }),
     );
     const signature = signMockPaymentWebhook(raw);
 
-    const applied = await repo.applyWebhook(raw, signature);
+    const applied = await repo.applyWebhook('mock-payment', raw, signature);
     expect(applied.verified).toBe(true);
     expect(applied.event?.status).toBe('PAID');
 
@@ -104,10 +110,16 @@ describe('payment webhook commits mutation + audit + event together (REQ-17-009)
     const externalId = created.externalId;
 
     const raw = new TextEncoder().encode(
-      JSON.stringify({ externalId, status: 'PAID', tenantId: API_TENANT_ID }),
+      JSON.stringify({
+        externalId,
+        status: 'PAID',
+        tenantId: API_TENANT_ID,
+        eventAt: new Date().toISOString(),
+        providerEventId: `evt-dup-${Date.now()}`,
+      }),
     );
-    await repo.applyWebhook(raw, signMockPaymentWebhook(raw));
-    await repo.applyWebhook(raw, signMockPaymentWebhook(raw));
+    await repo.applyWebhook('mock-payment', raw, signMockPaymentWebhook(raw));
+    await repo.applyWebhook('mock-payment', raw, signMockPaymentWebhook(raw));
 
     // The replay is IGNOREd, so exactly one event exists — the effect is
     // idempotent, not merely guarded at the HTTP edge.
@@ -131,14 +143,20 @@ describe('payment webhook commits mutation + audit + event together (REQ-17-009)
     });
     const externalId = created.externalId;
 
+    const [paymentRow] = await admin<{ id: string }[]>`
+      SELECT id FROM chai.payment WHERE tenant_id = ${API_TENANT_ID} AND external_id = ${externalId}
+    `;
+    const paymentId = paymentRow?.id ?? '';
+    expect(paymentId).toBeTruthy();
+
     // Two reminders chase this payment; one unrelated reminder must survive, so
     // the test proves the cancellation is targeted rather than a blanket update.
     const chasing = [randomUUID(), randomUUID()];
     const unrelated = randomUUID();
     for (const id of chasing) {
       await admin`
-        INSERT INTO chai.follow_up_job (id, tenant_id, due_at, payload)
-        VALUES (${id}, ${API_TENANT_ID}, now() + interval '1 hour',
+        INSERT INTO chai.follow_up_job (id, tenant_id, payment_id, due_at, payload)
+        VALUES (${id}, ${API_TENANT_ID}, ${paymentId}::uuid, now() + interval '1 hour',
                 ${admin.json({ paymentExternalId: externalId })})
       `;
     }
@@ -149,9 +167,15 @@ describe('payment webhook commits mutation + audit + event together (REQ-17-009)
     `;
 
     const raw = new TextEncoder().encode(
-      JSON.stringify({ externalId, status: 'PAID', tenantId: API_TENANT_ID }),
+      JSON.stringify({
+        externalId,
+        status: 'PAID',
+        tenantId: API_TENANT_ID,
+        eventAt: new Date().toISOString(),
+        providerEventId: `evt-reminder-${Date.now()}`,
+      }),
     );
-    await repo.applyWebhook(raw, signMockPaymentWebhook(raw));
+    await repo.applyWebhook('mock-payment', raw, signMockPaymentWebhook(raw));
 
     const cancelled = await admin<{ id: string; status: string }[]>`
       SELECT id, status FROM chai.follow_up_job
@@ -167,7 +191,7 @@ describe('payment webhook commits mutation + audit + event together (REQ-17-009)
 
     // Replay: the transition machine returns IGNORE, so nothing runs twice and
     // the reminders stay exactly as the first settlement left them.
-    await repo.applyWebhook(raw, signMockPaymentWebhook(raw));
+    await repo.applyWebhook('mock-payment', raw, signMockPaymentWebhook(raw));
     const settled = await admin<{ id: string }[]>`
       SELECT id FROM chai.payment
       WHERE tenant_id = ${API_TENANT_ID} AND external_id = ${externalId} LIMIT 1

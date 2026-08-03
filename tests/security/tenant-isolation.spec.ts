@@ -25,8 +25,8 @@ test.describe('tenant-scoped list endpoints', () => {
       headers: { 'x-test-subject': 'local|client-owner' },
     });
     expect(response.status()).toBe(200);
-    const data = await response.json();
-    for (const item of data) {
+    const body = await response.json();
+    for (const item of body.data) {
       if (item.tenantId) {
         expect(item.tenantId).toBe(CLIENT_TENANT_ID);
       }
@@ -38,8 +38,8 @@ test.describe('tenant-scoped list endpoints', () => {
       headers: { 'x-test-subject': 'local|client-owner' },
     });
     expect(response.status()).toBe(200);
-    const data = await response.json();
-    for (const item of data) {
+    const body = await response.json();
+    for (const item of body.data) {
       expect(item.tenantId).toBe(CLIENT_TENANT_ID);
     }
   });
@@ -49,9 +49,9 @@ test.describe('tenant-scoped list endpoints', () => {
       headers: { 'x-test-subject': 'local|client-owner' },
     });
     expect(response.status()).toBe(200);
-    const data = await response.json();
+    const body = await response.json();
     // Team members should be scoped to authenticated tenant
-    expect(Array.isArray(data)).toBeTruthy();
+    expect(Array.isArray(body.data)).toBeTruthy();
   });
 
   test('analytics outcomes are scoped to own tenant', async ({ request }) => {
@@ -59,8 +59,8 @@ test.describe('tenant-scoped list endpoints', () => {
       headers: { 'x-test-subject': 'local|client-owner' },
     });
     expect(response.status()).toBe(200);
-    const data = await response.json();
-    expect(data).toBeDefined();
+    const body = await response.json();
+    expect(body.data).toBeDefined();
   });
 });
 
@@ -136,20 +136,60 @@ test.describe('owner tenant scope enforcement', () => {
 
 test.describe('data isolation under mutation', () => {
   test('payment session created in own tenant is retrievable', async ({ request }) => {
-    const checkout = await request.post(`${API_BASE}/api/client/v1/payments/checkout`, {
-      headers: { 'x-test-subject': 'local|client-owner' },
+    // FASE 6 — checkout resolves its amount from a real invoice, not a
+    // client-supplied number. Seed a catalog item -> order -> invoice first.
+    const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const catalog = await request.post(`${API_BASE}/api/client/v1/orders/catalog`, {
+      headers: {
+        'Idempotency-Key': `tenant-iso-catalog-${unique}`,
+        'x-test-subject': 'local|client-owner',
+      },
       data: {
-        amount: 1000,
-        currency: 'usd',
-        idempotencyKey: `tenant-iso-${Date.now()}`,
+        currency: 'IDR',
+        name: `Tenant iso item ${unique}`,
+        sku: `tiso-${unique}`,
+        unitPriceCents: 1000,
+      },
+    });
+    const serviceItemId = (await catalog.json()).data.id as string;
+
+    const order = await request.post(`${API_BASE}/api/client/v1/orders`, {
+      headers: {
+        'Idempotency-Key': `tenant-iso-order-${unique}`,
+        'x-test-subject': 'local|client-owner',
+      },
+      data: { items: [{ quantity: 1, serviceItemId }] },
+    });
+    const orderId = (await order.json()).data.id as string;
+
+    const invoiceResponse = await request.post(
+      `${API_BASE}/api/client/v1/orders/${orderId}/invoices`,
+      {
+        headers: {
+          'Idempotency-Key': `tenant-iso-invoice-${unique}`,
+          'x-test-subject': 'local|client-owner',
+        },
+        data: {},
+      },
+    );
+    const invoiceId = (await invoiceResponse.json()).data.id as string;
+
+    const checkout = await request.post(`${API_BASE}/api/client/v1/payments/checkout`, {
+      headers: {
+        'Idempotency-Key': `tenant-iso-${unique}`,
+        'x-test-subject': 'local|client-owner',
+      },
+      data: {
+        idempotencyKey: `tenant-iso-${unique}`,
+        invoiceId,
       },
     });
     expect(checkout.status()).toBe(201);
-    const session = await checkout.json();
+    const body = await checkout.json();
 
     // Retrieve in same tenant context
     const retrieved = await request.get(
-      `${API_BASE}/api/client/v1/payments/${session.externalId}`,
+      `${API_BASE}/api/client/v1/payments/${body.data.externalId}`,
       { headers: { 'x-test-subject': 'local|client-owner' } },
     );
     expect(retrieved.status()).toBe(200);
@@ -158,12 +198,16 @@ test.describe('data isolation under mutation', () => {
   test('appointment created in own tenant is scoped correctly', async ({ request }) => {
     const startsAt = new Date(Date.now() + 345600000).toISOString();
     const endsAt = new Date(Date.now() + 349200000).toISOString();
+    const idempotencyKey = `tenant-iso-appt-${Date.now()}`;
 
     const booking = await request.post(`${API_BASE}/api/client/v1/appointments`, {
-      headers: { 'x-test-subject': 'local|client-owner' },
+      headers: {
+        'Idempotency-Key': idempotencyKey,
+        'x-test-subject': 'local|client-owner',
+      },
       data: {
         contactId: 'iso-contact',
-        idempotencyKey: `tenant-iso-appt-${Date.now()}`,
+        idempotencyKey,
         resourceId: 'iso-resource',
         startsAt,
         endsAt,
@@ -171,8 +215,8 @@ test.describe('data isolation under mutation', () => {
       },
     });
     expect(booking.status()).toBe(201);
-    const appointment = await booking.json();
-    expect(appointment.tenantId).toBe(CLIENT_TENANT_ID);
+    const body = await booking.json();
+    expect(body.data.tenantId).toBe(CLIENT_TENANT_ID);
   });
 });
 
@@ -199,7 +243,10 @@ test.describe('information leakage prevention', () => {
     const response = await request.patch(
       `${API_BASE}/api/client/v1/leads/nonexistent-id/qualify`,
       {
-        headers: { 'x-test-subject': 'local|client-owner' },
+        headers: {
+          'Idempotency-Key': `leak-check-${Date.now()}`,
+          'x-test-subject': 'local|client-owner',
+        },
         data: { score: 50 },
       },
     );

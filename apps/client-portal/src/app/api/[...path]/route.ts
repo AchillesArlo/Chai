@@ -1,7 +1,9 @@
-import { cookies } from 'next/headers';
+import { cookies, headers as nextHeaders } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-import { SESSION_COOKIE_NAMES } from '@chai/auth';
+import { SESSION_COOKIE_NAMES, requestOriginIsTrusted } from '@chai/auth';
+
+const SAFE_METHODS = new Set(['GET', 'HEAD']);
 
 /**
  * Server-side proxy: forwards client-side fetch calls to the API service,
@@ -12,6 +14,15 @@ async function handler(
   req: Request,
   context: { params: Promise<{ path: string[] }> },
 ): Promise<NextResponse> {
+  if (!SAFE_METHODS.has(req.method)) {
+    const host = (await nextHeaders()).get('host');
+    if (!requestOriginIsTrusted(req.headers, host)) {
+      return NextResponse.json(
+        { error: { code: 'CSRF_ORIGIN_MISMATCH', message: 'Request origin not trusted.' } },
+        { status: 403 },
+      );
+    }
+  }
   const { path } = await context.params;
   const target = `${process.env.API_URL ?? 'http://localhost:3001'}/api/${path.join('/')}`;
   const jar = await cookies();

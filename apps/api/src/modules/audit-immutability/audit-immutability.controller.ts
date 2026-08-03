@@ -1,5 +1,5 @@
 import { TenantId } from '../../common/tenant-id.decorator';
-import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Inject, Param, Query } from '@nestjs/common';
 import {
   IsIn,
   IsObject,
@@ -64,7 +64,10 @@ class CreateEntryDto {
 @RequireAudience('service')
 @RequirePermission('event.publish')
 export class AuditImmutabilityController {
-  constructor(private readonly repo: AuditImmutabilityRepository) {}
+  constructor(
+    @Inject(AuditImmutabilityRepository)
+    private readonly repo: AuditImmutabilityRepository,
+  ) {}
 
   @Post('entries')
   async createEntry(@Body() body: CreateEntryDto) {

@@ -9,6 +9,7 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  Inject,
   ParseUUIDPipe,
   NotFoundException,
 } from '@nestjs/common';
@@ -44,7 +45,10 @@ export interface UpsertThemeDto {
 
 @Controller('api/owner/v1/whitelabel')
 export class WhitelabelController {
-  constructor(private readonly repo: WhitelabelRepository) {}
+  constructor(
+    @Inject(WhitelabelRepository)
+    private readonly repo: WhitelabelRepository,
+  ) {}
 
   // ── Custom Domains ─────────────────────────────────────────────────────────
 

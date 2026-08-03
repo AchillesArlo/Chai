@@ -20,3 +20,16 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - vite@8.1.5
   - pnpm@11.13.1
+  - '@swc/core-darwin-arm64@1.15.47'
+  - '@swc/core-darwin-x64@1.15.47'
+  - '@swc/core-linux-arm-gnueabihf@1.15.47'
+  - '@swc/core-linux-arm64-gnu@1.15.47'
+  - '@swc/core-linux-arm64-musl@1.15.47'
+  - '@swc/core-linux-ppc64-gnu@1.15.47'
+  - '@swc/core-linux-s390x-gnu@1.15.47'
+  - '@swc/core-linux-x64-gnu@1.15.47'
+  - '@swc/core-linux-x64-musl@1.15.47'
+  - '@swc/core-win32-arm64-msvc@1.15.47'
+  - '@swc/core-win32-ia32-msvc@1.15.47'
+  - '@swc/core-win32-x64-msvc@1.15.47'
+  - '@swc/core@1.15.47'

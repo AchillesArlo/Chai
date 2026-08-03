@@ -199,3 +199,49 @@ export function resetPiiRedactionPipeline(): void {
 export function createPiiRedactionPipeline(rules?: PiiRedactionRule[]): PiiRedactionPipeline {
   return new PiiRedactionPipeline(rules);
 }
+
+/**
+ * Financial-secret field rules layered on top of {@link DEFAULT_RULES} for the
+ * inbound webhook payload store (FASE 29). The blueprint forbids retaining
+ * card/CVV/PIN/OTP/bank-credential data; short values like a 3-digit CVV or a
+ * 4-digit PIN cannot be caught by value scanning (they look like any other
+ * number), so they are matched by field NAME and masked whole.
+ *
+ * Card *numbers* pasted into a free-text message body are still caught by the
+ * value patterns in {@link PiiRedactionPipeline} (the 16-digit / grouped-digit
+ * patterns), so both structured fields and inline numbers are covered.
+ */
+export const FINANCIAL_REDACTION_RULES: PiiRedactionRule[] = [
+  {
+    fieldPattern: /cvv|cvc|cvv2|card_?security|security_?code/i,
+    class: 'credit_card',
+    replacement: '[REDACTED_CARD]',
+  },
+  {
+    // \bpin\b matches a bare "pin"; pin_?code / pin_?block match "pinCode",
+    // "pin_block", etc. without matching "shipping" (which merely contains pin).
+    fieldPattern: /\bpin\b|pin_?code|pin_?block/i,
+    class: 'credential',
+    replacement: '[REDACTED_CREDENTIAL]',
+  },
+  {
+    fieldPattern: /\botp\b|otp_?code|one_?time_?(code|pass|password)|verification_?code/i,
+    class: 'credential',
+    replacement: '[REDACTED_CREDENTIAL]',
+  },
+  {
+    fieldPattern: /iban|bank_?account|account_?number|routing_?number|sort_?code/i,
+    class: 'credential',
+    replacement: '[REDACTED_CREDENTIAL]',
+  },
+];
+
+/**
+ * Pipeline for the inbound webhook payload store: {@link FINANCIAL_REDACTION_RULES}
+ * first (so their labels win on a tie) then the defaults. A fresh array is
+ * spread so the shared module-level DEFAULT_RULES is never mutated — the audit
+ * and telemetry redactors keep their exact behaviour.
+ */
+export function createInboxPayloadRedactionPipeline(): PiiRedactionPipeline {
+  return new PiiRedactionPipeline([...FINANCIAL_REDACTION_RULES, ...DEFAULT_RULES]);
+}

@@ -73,7 +73,19 @@ export function TenantsOverview() {
     setSlugInput('');
   };
 
+  const [confirmingTenant, setConfirmingTenant] = useState<TenantRow | null>(null);
+
   const handleToggleTenantStatus = (id: string) => {
+    const tenant = tenants.find((t) => t.id === id);
+    if (tenant && tenant.status === 'ACTIVE') {
+      // Require confirmation for destructive action (REQ-03-035)
+      setConfirmingTenant(tenant);
+      return;
+    }
+    executeToggleTenantStatus(id);
+  };
+
+  const executeToggleTenantStatus = (id: string) => {
     setTenants((prev) =>
       prev.map((t) => {
         if (t.id === id) {
@@ -83,6 +95,7 @@ export function TenantsOverview() {
         return t;
       })
     );
+    setConfirmingTenant(null);
   };
 
   const handleTriageRisk = (id: string) => {
@@ -261,6 +274,42 @@ export function TenantsOverview() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Suspend Tenant Confirmation Modal (REQ-03-035) */}
+      {confirmingTenant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-semibold text-red-600">Konfirmasi Penangguhan Tenant</h3>
+              <button
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                onClick={() => setConfirmingTenant(null)}
+                type="button"
+              >
+                <X aria-hidden="true" className="size-5" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-600">
+              Apakah Anda yakin ingin menangguhkan tenant <strong className="text-slate-900">{confirmingTenant.name}</strong>? Penangguhan akan menonaktifkan akses API dan portal untuk tenant ini.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => setConfirmingTenant(null)}
+                type="button"
+              >
+                Batal
+              </button>
+              <button
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                onClick={() => executeToggleTenantStatus(confirmingTenant.id)}
+                type="button"
+              >
+                Konfirmasi Suspend
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  Inject,
   Param,
   Post,
   Query,
@@ -15,14 +16,19 @@ import { DlqRepository, type DeadLetterEntry } from './dlq.repository';
 @RequireAudience('service')
 @RequirePermission('inbox.dispatch')
 export class DlqController {
-  constructor(private readonly repo: DlqRepository) {}
+  constructor(
+    @Inject(DlqRepository)
+    private readonly repo: DlqRepository,
+  ) {}
 
   @Get()
   async list(
     @Query('tenantId') tenantId?: string,
     @Query('limit') limit?: string
   ): Promise<{ entries: DeadLetterEntry[]; total: number }> {
-    const entries = this.repo.list(tenantId, limit ? Number(limit) : 50);
+    const raw = limit ? Number(limit) : 50;
+    const capped = Number.isFinite(raw) ? Math.min(Math.max(raw, 1), 100) : 50;
+    const entries = this.repo.list(tenantId, capped);
     return { entries, total: entries.length };
   }
 

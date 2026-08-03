@@ -44,7 +44,7 @@ Select-String -Path $f -Pattern '^\| REQ-17-\d{3} ' |
 | REQ-17-006 | Logistik MVP read-first (tanpa mutasi) | TERPENUHI | - |
 | REQ-17-007 | Payment/fulfillment marketplace bersumber dari marketplace | TIDAK-TERVERIFIKASI | - |
 | REQ-17-008 | Tipe SDK provider tak bocor ke entitas core | TERPENUHI | - |
-| REQ-17-009 | Efek eksternal idempoten+audit+event dalam SATU transaksi | SEBAGIAN | CRITICAL |
+| REQ-17-009 | Efek eksternal idempoten+audit+event dalam SATU transaksi | TERPENUHI | CRITICAL |
 | REQ-17-010 | Kapabilitas high-risk di balik gate rollout | TERPENUHI | - |
 | REQ-17-011 | Metadata akun provider + referensi secret-manager (bukan plaintext) | SEBAGIAN | HIGH |
 | REQ-17-012 | Effective capability = irisan adapter∩scope∩state∩entitlement∩policy | SEBAGIAN | MEDIUM |
@@ -98,7 +98,7 @@ Select-String -Path $f -Pattern '^\| REQ-17-\d{3} ' |
 | REQ-17-060 | PAY-03 Status hanya dari bukti provider; redirect/screenshot/klaim tak cukup | TERPENUHI | - |
 | REQ-17-061 | PAY-04 Webhook duplikat/replay/out-of-order tak duplikasi/mundurkan payment | TERPENUHI | - |
 | REQ-17-062 | PAY-05 Hasil create tak dikenal direkonsiliasi sebelum retry | TERPENUHI | - |
-| REQ-17-063 | PAY-06 Event paid update proyeksi + stop reminder tepat sekali | HILANG | CRITICAL |
+| REQ-17-063 | PAY-06 Event paid update proyeksi + stop reminder tepat sekali | SEBAGIAN (stop-reminder TERPENUHI; update proyeksi masih HILANG, lihat REQ-17-019) | CRITICAL |
 | REQ-17-064 | PAY-07 Refund nonaktif s.d. approval+recent-auth+rekonsiliasi+tes provider | SEBAGIAN | HIGH |
 | REQ-17-065 | PAY-08 Mismatch produksi punya alert+owner+aging+runbook+audit | HILANG | HIGH |
 | REQ-17-066 | LOG-01 Data tenant-isolated + lookup end-customer verifikasi ownership | SEBAGIAN | HIGH |
@@ -127,19 +127,25 @@ Blok ditulis lengkap untuk semua non-`TERPENUHI` (wajib punya "Yang kurang") dan
 - `packages/connectors/src/connectors/mock-payment/index.ts` `verifyMockPaymentWebhookSignature()` — HMAC-SHA256 + `timingSafeEqual`.
 - `packages/connectors/src/conformance/payment.test.ts` — "rejects webhooks with bad signature".
 
-### REQ-17-009 — Efek eksternal idempoten + mutasi+audit+event dalam SATU transaksi · SEBAGIAN · CRITICAL (invarian)
+### REQ-17-009 — Efek eksternal idempoten + mutasi+audit+event dalam SATU transaksi · TERPENUHI · CRITICAL (invarian)
+
+**Koreksi 2026-07-29 (pasca-audit)**: temuan di bawah ini sudah ditutup. `applyWebhook`
+(`apps/api/src/modules/payments/postgres-payments.repository.ts`) sekarang membungkus penulisan
+state dengan `commitBusinessMutation`, sama seperti jalur worker — memanggil `stopPaymentReminders`
+di dalam transaksi yang sama dan meng-emit event `payment.<status>` yang konsisten dengan jalur
+worker. Uraian temuan asli dipertahankan di bawah sebagai jejak keputusan.
 
 **Persyaratan** (`17 §2.9`, ADR-007): "Every external side effect is idempotent, audited, tenant-scoped, policy-checked, and reconcilable." ADR-007: "business mutation + outbox + audit in transaction".
 
-**Kondisi nyata**: Jalur **worker rekonsiliasi** memenuhi penuh: `commitBusinessMutation` menjalankan mutate + `appendAuditEntry` + `appendOutboxEvent` dalam satu transaksi ber-tenant dan menolak mutasi tanpa event (`throw 'BUSINESS_MUTATION_REQUIRES_EVENT'`). Jalur **webhook API** (`applyWebhook`) meng-`UPDATE chai.payment SET status=…` **tanpa** audit dan **tanpa** outbox event dalam transaksi itu. Karena webhook adalah jalur happy-path utama (spec §6.3 langkah 6–7) dan sekali status menjadi terminal reconciler mengecualikannya (`status IN ('CREATED','PENDING','UNKNOWN_RESULT')`), transisi yang tiba lewat webhook tidak pernah menghasilkan audit/event.
+**Kondisi nyata (saat audit ditulis)**: Jalur **worker rekonsiliasi** memenuhi penuh: `commitBusinessMutation` menjalankan mutate + `appendAuditEntry` + `appendOutboxEvent` dalam satu transaksi ber-tenant dan menolak mutasi tanpa event (`throw 'BUSINESS_MUTATION_REQUIRES_EVENT'`). Jalur **webhook API** (`applyWebhook`) meng-`UPDATE chai.payment SET status=…` **tanpa** audit dan **tanpa** outbox event dalam transaksi itu. Karena webhook adalah jalur happy-path utama (spec §6.3 langkah 6–7) dan sekali status menjadi terminal reconciler mengecualikannya (`status IN ('CREATED','PENDING','UNKNOWN_RESULT')`), transisi yang tiba lewat webhook tidak pernah menghasilkan audit/event.
 
-**Bukti**:
+**Bukti (saat audit ditulis)**:
 - `packages/domain/src/outbox/producer.ts:130` `commitBusinessMutation` — mutate+audit+event satu transaksi; `BUSINESS_MUTATION_REQUIRES_EVENT`.
 - `workers/payment-worker/src/reconcile.ts` `applyReconciliation()` — memakai `commitBusinessMutation`. ✔
 - `apps/api/src/modules/payments/postgres-payments.repository.ts` `applyWebhook()` — `UPDATE chai.payment … RETURNING *` tanpa audit/outbox. ✘
 - `workers/payment-worker/src/reconcile.ts` `selectNonTerminalPayments()` — hanya `CREATED/PENDING/UNKNOWN_RESULT`, jadi PAID via webhook tak akan di-emit ulang.
 
-**Yang kurang**: Bungkus penulisan state pada `applyWebhook` (dan `appendEvent` logistik di API) dengan `commitBusinessMutation` sehingga audit + outbox event (`payment.status_changed`/`payment.paid`) commit dalam transaksi yang sama seperti jalur worker.
+**Bukti penutupan**: `applyWebhook` kini memanggil `commitBusinessMutation(tx, { describe, mutate })` dengan `describe()` yang menyusun baris audit (`action: 'payment.status_changed'`) dan event (`payment.<status>`) dari hasil `mutate()`, persis pola yang sudah dipakai `applyReconciliation`. Diverifikasi lewat `apps/api/test/integration/payment-webhook-audit.integration.test.ts` dan suite integrasi `@chai/api`/`@chai/worker-payment-worker` (exit 0).
 
 ### REQ-17-014 — Uang = integer minor units + kode mata uang · TERPENUHI · - (invarian)
 
@@ -583,11 +589,20 @@ Blok ditulis lengkap untuk semua non-`TERPENUHI` (wajib punya "Yang kurang") dan
 
 **Bukti**: `packages/domain/src/payments/transitions.ts`; `apps/api/src/modules/payments/payment-transitions.test.ts` (semua kasus); `postgres-payments.repository.ts applyWebhook` (`SELECT … FOR UPDATE`).
 
-### REQ-17-063 — PAY-06 Paid update proyeksi + stop reminder tepat sekali · HILANG · CRITICAL
+### REQ-17-063 — PAY-06 Paid update proyeksi + stop reminder tepat sekali · SEBAGIAN · CRITICAL
+
+**Koreksi 2026-07-29 (pasca-audit)**: naik dari HILANG ke SEBAGIAN. Bagian stop-reminder sudah
+ditutup: `stopPaymentReminders` (dipanggil oleh `applyWebhook` dan `applyReconciliation`, keduanya
+di dalam transaksi yang sama dengan perubahan status) menghentikan `chai.follow_up_job` yang
+menautkan `payload->>'paymentExternalId'`, dengan predikat `status = 'PENDING'` sebagai backstop
+tepat-sekali. Bagian "updates linked projection" **tetap terbuka** — persyaratan §18 PAY-06 memakai
+kata "and" sehingga menuntut kedua bagian, dan bagian ini sama kondisinya dengan REQ-17-019 (lihat
+uraian di sana): tidak ada tabel `order`/`invoice` kanonik untuk diproyeksikan, butuh keputusan
+model bisnis sebelum dikerjakan.
 
 **Persyaratan** (`17 §18 PAY-06`): "Paid event updates linked projection and stops applicable reminders exactly once."
 
-**Kondisi nyata**: Tak ada penghentian reminder pada PAID, tak ada update proyeksi tertaut, dan jalur webhook tak meng-emit event sama sekali (lihat REQ-17-009/019).
+**Kondisi nyata (saat audit ditulis)**: Tak ada penghentian reminder pada PAID, tak ada update proyeksi tertaut, dan jalur webhook tak meng-emit event sama sekali (lihat REQ-17-009/019).
 
 **Bukti**: Grep `stop.*reminder|reminder.*stop|stopOnPaid|stop_on_paid` → hanya komentar "stop-on-paid" (arti berbeda: PAID tak mundur), **tak ada** penghentian follow-up job; `chai.payment` tak punya tautan proyeksi.
 
@@ -939,6 +954,21 @@ Blok berikut memberi bukti `path:baris` untuk 23 REQ yang sebelumnya hanya berup
 
 Dihitung dengan perintah di heading berkas ini, dijalankan atas berkas ini (tabel Ringkasan, 73 baris `REQ-17-###`):
 
+**Koreksi pasca-sesi FASE 1 (2026-07-29, sama hari)**: `REQ-17-009` berpindah SEBAGIAN→TERPENUHI;
+`REQ-17-063` berpindah HILANG→SEBAGIAN. Rekap terkini:
+
+```
+Name                Count
+----                -----
+HILANG                  4
+SEBAGIAN               38
+TERPENUHI              24
+TIDAK-TERVERIFIKASI     7
+```
+
+Total REQ: 73. `BERTENTANGAN`: 0.
+
+Rekap asli sebelum koreksi (dipertahankan sebagai jejak):
 ```
 Name                Count
 ----                -----
@@ -950,8 +980,12 @@ TIDAK-TERVERIFIKASI     7
 
 Total REQ: 73. `BERTENTANGAN`: 0.
 
-Per severity (43 temuan non-`TERPENUHI`/non-`TIDAK-TERVERIFIKASI`):
-- **CRITICAL (3)**: REQ-17-009 (efek eksternal tanpa audit+event dalam satu tx di jalur webhook), REQ-17-019 (on-PAID tak update proyeksi/stop reminder), REQ-17-063 (PAY-06 HILANG).
+Per severity (43 temuan non-`TERPENUHI`/non-`TIDAK-TERVERIFIKASI` sebelum koreksi; 41 setelah
+koreksi karena REQ-17-009 keluar dari hitungan celah):
+- **CRITICAL (2 setelah koreksi, semula 3)**: REQ-17-019 (on-PAID tak update proyeksi/stop reminder),
+  REQ-17-063 (PAY-06 SEBAGIAN — stop-reminder tertutup, update-proyeksi masih menunggu REQ-17-019).
+  REQ-17-009 (efek eksternal tanpa audit+event dalam satu tx di jalur webhook) **TERPENUHI**, keluar
+  dari daftar celah.
 - **HIGH (12)**: REQ-17-011, 021, 027, 033, 044, 049, 053, 058, 059, 064, 065, 066 (tema ownership-lookup, refund, secret-manager, event kanonik).
 - **MEDIUM (23)**: sisa SEBAGIAN/HILANG (mis. 002, 005, 012, 020, 023, 028, 029, 030, 031, 034, 038, 041, 042, 048, 050, 056, 057, 067, 070, 071, 072, 073).
 - **LOW (5)**: REQ-17-016, 024, 035, 039, 045.
@@ -965,10 +999,15 @@ Per severity (43 temuan non-`TERPENUHI`/non-`TIDAK-TERVERIFIKASI`):
 ```
 REQ dihasilkan: 73
   TERPENUHI 23 | SEBAGIAN 38 | HILANG 5 | BERTENTANGAN 0 | TIDAK-TERVERIFIKASI 7
+  (Koreksi pasca-sesi FASE 1, 2026-07-29 sama hari: TERPENUHI 24 | SEBAGIAN 38 | HILANG 4 |
+   BERTENTANGAN 0 | TIDAK-TERVERIFIKASI 7 — REQ-17-009 SEBAGIAN→TERPENUHI, REQ-17-063 HILANG→SEBAGIAN.)
 Temuan severity tertinggi:
-  REQ-17-009 (CRITICAL) - jalur webhook payment mengubah state uang tanpa audit+outbox dalam satu transaksi (invarian ADR-007)
-  REQ-17-063 (CRITICAL, HILANG) - PAY-06: event paid tidak menghentikan reminder / update proyeksi
-  REQ-17-019 (CRITICAL) - langkah on-PAID (update proyeksi + stop reminder + notifikasi + atribusi) tidak ada
+  REQ-17-009 (CRITICAL, TERPENUHI 2026-07-29) - jalur webhook payment kini membungkus mutasi state
+    dengan commitBusinessMutation (audit+outbox dalam satu transaksi, sama seperti jalur worker)
+  REQ-17-063 (CRITICAL, SEBAGIAN, naik dari HILANG 2026-07-29) - stop-reminder tertutup; update
+    proyeksi masih menunggu REQ-17-019
+  REQ-17-019 (CRITICAL, masih SEBAGIAN) - langkah on-PAID (update proyeksi + notifikasi + atribusi)
+    tidak ada; butuh keputusan model bisnis (order/invoice kanonik) sebelum dikerjakan
 Invarian inti yang AMAN (TERPENUHI, terbukti terpanggil + tes):
   uang integer minor units (014), immutability trigger (015), PAID tak mundur (018/061),
   unknown->UNKNOWN payment (025) & logistik gagal-aman (031 sisi mapping), refund non-AI (026),

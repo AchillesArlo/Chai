@@ -24,7 +24,14 @@ export interface ConnectorSecret {
   id: string;
   connectorConfigId: string;
   secretKey: string;
-  secretValueEncrypted: Buffer;
+  /**
+   * Vault reference (format `v1:{tenantId}:{key}:{version}`) ke SecretService.
+   * Plaintext tidak pernah disimpan di DB; kolom DB hanya menyimpan reference.
+   * Null hanya untuk baris legacy pra-0086 yang belum dimigrasi.
+   */
+  secretValueRef: string | null;
+  /** Kolom legacy pra-0086; dipertahankan nullable untuk migrasi data. */
+  secretValueLegacyEncrypted: Buffer | null;
   secretVersion: number;
   rotatedAt: string | null;
   rotatedBy: string | null;
@@ -40,6 +47,7 @@ export abstract class ConnectorConfigRepository {
 
   abstract listSecrets(tenantId: string, configId: string): Promise<ConnectorSecret[]>;
   abstract createSecret(tenantId: string, secret: Omit<ConnectorSecret, 'id' | 'createdAt'>): Promise<ConnectorSecret>;
+  abstract rotateSecret(tenantId: string, id: string, update: { secretValueRef: string; secretVersion: number; rotatedAt: string; rotatedBy: string }): Promise<ConnectorSecret>;
   abstract deleteSecret(tenantId: string, id: string): Promise<void>;
 }
 
@@ -90,6 +98,22 @@ export class InMemoryConnectorConfigRepository extends ConnectorConfigRepository
     const created = { ...secret, id: randomUUID(), createdAt: new Date().toISOString() };
     this.secrets.set(created.id, created);
     return created;
+  }
+
+  async rotateSecret(tenantId: string, id: string, update: { secretValueRef: string; secretVersion: number; rotatedAt: string; rotatedBy: string }): Promise<ConnectorSecret> {
+    const existing = this.secrets.get(id);
+    if (!existing) throw new Error('Connector secret not found');
+    const config = this.configs.get(existing.connectorConfigId);
+    if (!config || config.tenantId !== tenantId) throw new Error('Connector secret not found');
+    const updated: ConnectorSecret = {
+      ...existing,
+      secretValueRef: update.secretValueRef,
+      secretVersion: update.secretVersion,
+      rotatedAt: update.rotatedAt,
+      rotatedBy: update.rotatedBy,
+    };
+    this.secrets.set(id, updated);
+    return updated;
   }
 
   async deleteSecret(tenantId: string, id: string): Promise<void> {

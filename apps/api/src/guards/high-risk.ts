@@ -64,3 +64,44 @@ export function assertRecentAuthentication(
     throw new ForbiddenException({ code: 'RECENT_AUTH_REQUIRED' });
   }
 }
+
+/**
+ * Inventory of routes that call {@link assertRecentAuthentication} (REQ-10-005).
+ * This list is the source of truth for "which actions require a freshly
+ * presented credential" — kept here, not only in each controller, so a
+ * reviewer or a future test can check coverage without grepping every module.
+ * Each entry names the route and the reason it is irreversible-enough (from
+ * the caller's side) to need re-proof of the credential rather than just a
+ * live session.
+ */
+export const RECENT_AUTH_ROUTES = [
+  {
+    reason: 'Executes an irreversible refund of already-settled money.',
+    route: 'POST /api/client/v1/payments/:id/refunds',
+  },
+  {
+    reason:
+      'Creates a recurring payment mandate — authorizes future charges without further caller action, same blast radius as a refund.',
+    route: 'POST /api/client/v1/subscriptions',
+  },
+  {
+    reason: 'Removes a team member; the caller cannot self-undo (needs re-invite).',
+    route: 'DELETE /api/client/v1/team/:id',
+  },
+  {
+    reason: 'Writes a new connector credential (secret rotation).',
+    route: 'POST /api/owner/v1/connector-config/configs/:id/secrets',
+  },
+  {
+    reason: 'Deletes a connector credential.',
+    route: 'DELETE /api/owner/v1/connector-config/secrets/:id',
+  },
+  {
+    reason: 'Redirects where audit data is exported to — a data-exfiltration vector if hijacked.',
+    route: 'POST /api/owner/v1/enterprise/audit-export-config',
+  },
+  {
+    reason: 'Resolves an operational reconciliation discrepancy; writes audit and event.',
+    route: 'POST /api/client/v1/payments/reconciliations/:id/resolve',
+  },
+] as const;

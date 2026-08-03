@@ -1,16 +1,285 @@
 import { TenantId } from '../../common/tenant-id.decorator';
-import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
-import { evaluateBurnRateAlerts, type BurnRateAlert, type BurnRateSample } from '@chai/domain';
+import { Controller, Get, Post, Put, Body, Inject, Param, Query, UseGuards } from '@nestjs/common';
+import { Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsIn, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { evaluateBurnRateAlerts, type BurnRateAlert } from '@chai/domain';
 
 import { ObservabilityRepository } from './observability.repository';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { RequirePermission } from '../../guards/require-permission.decorator';
 import type { ServiceLevelIndicator, ErrorBudget, Incident, Runbook, RunbookExecution } from './observability.repository';
 
+class UpsertSliDto {
+  @IsString()
+  serviceName!: string;
+
+  @IsString()
+  indicatorName!: string;
+
+  @IsNumber()
+  targetValue!: number;
+
+  @IsOptional()
+  @IsNumber()
+  currentValue?: number | null;
+
+  @IsString()
+  measurementWindow!: string;
+
+  @IsIn(['healthy', 'warning', 'breached'])
+  status!: 'healthy' | 'warning' | 'breached';
+}
+
+// burnRate is derived from consumption and never accepted from the caller (R-19);
+// omitting it here lets forbidNonWhitelisted reject any attempt to assert one.
+class CreateErrorBudgetDto {
+  @IsString()
+  serviceName!: string;
+
+  @IsString()
+  periodStart!: string;
+
+  @IsString()
+  periodEnd!: string;
+
+  @IsNumber()
+  totalBudgetSeconds!: number;
+
+  @IsNumber()
+  consumedSeconds!: number;
+}
+
+class UpdateErrorBudgetDto {
+  @IsOptional()
+  @IsString()
+  serviceName?: string;
+
+  @IsOptional()
+  @IsString()
+  periodStart?: string;
+
+  @IsOptional()
+  @IsString()
+  periodEnd?: string;
+
+  @IsOptional()
+  @IsNumber()
+  totalBudgetSeconds?: number;
+
+  @IsOptional()
+  @IsNumber()
+  consumedSeconds?: number;
+}
+
+class BurnRateSampleDto {
+  @IsNumber()
+  badEvents!: number;
+
+  @IsNumber()
+  totalEvents!: number;
+
+  @IsNumber()
+  windowSeconds!: number;
+}
+
+class EvaluateBurnRateDto {
+  @IsNumber()
+  objective!: number;
+
+  @IsNumber()
+  periodDays!: number;
+
+  @ValidateNested({ each: true })
+  @Type(() => BurnRateSampleDto)
+  samples!: BurnRateSampleDto[];
+
+  @IsString()
+  sloId!: string;
+}
+
+class CreateIncidentDto {
+  @IsIn(['P1', 'P2', 'P3', 'P4'])
+  severity!: 'P1' | 'P2' | 'P3' | 'P4';
+
+  @IsIn(['investigating', 'identified', 'monitoring', 'resolved', 'postmortem'])
+  status!: 'investigating' | 'identified' | 'monitoring' | 'resolved' | 'postmortem';
+
+  @IsString()
+  title!: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsOptional()
+  @IsString()
+  impact?: string | null;
+
+  @IsOptional()
+  @IsString()
+  rootCause?: string | null;
+
+  @IsOptional()
+  @IsString()
+  resolution?: string | null;
+
+  @IsString()
+  startedAt!: string;
+
+  @IsOptional()
+  @IsString()
+  identifiedAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  resolvedAt?: string | null;
+
+  @IsString()
+  createdBy!: string;
+}
+
+class UpdateIncidentDto {
+  @IsOptional()
+  @IsIn(['P1', 'P2', 'P3', 'P4'])
+  severity?: 'P1' | 'P2' | 'P3' | 'P4';
+
+  @IsOptional()
+  @IsIn(['investigating', 'identified', 'monitoring', 'resolved', 'postmortem'])
+  status?: 'investigating' | 'identified' | 'monitoring' | 'resolved' | 'postmortem';
+
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsOptional()
+  @IsString()
+  impact?: string | null;
+
+  @IsOptional()
+  @IsString()
+  rootCause?: string | null;
+
+  @IsOptional()
+  @IsString()
+  resolution?: string | null;
+
+  @IsOptional()
+  @IsString()
+  startedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  identifiedAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  resolvedAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  createdBy?: string;
+}
+
+class CreateRunbookDto {
+  @IsString()
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsString()
+  triggerCondition!: string;
+
+  @IsArray()
+  steps!: unknown[];
+
+  @IsBoolean()
+  autoExecute!: boolean;
+}
+
+class UpdateRunbookDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsOptional()
+  @IsString()
+  triggerCondition?: string;
+
+  @IsOptional()
+  @IsArray()
+  steps?: unknown[];
+
+  @IsOptional()
+  @IsBoolean()
+  autoExecute?: boolean;
+}
+
+class CreateRunbookExecutionDto {
+  @IsString()
+  runbookId!: string;
+
+  @IsIn(['running', 'success', 'failed', 'cancelled'])
+  status!: 'running' | 'success' | 'failed' | 'cancelled';
+
+  @IsString()
+  startedAt!: string;
+
+  @IsOptional()
+  @IsString()
+  completedAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  executedBy?: string | null;
+
+  @IsOptional()
+  @IsString()
+  errorMessage?: string | null;
+}
+
+class UpdateRunbookExecutionDto {
+  @IsOptional()
+  @IsString()
+  runbookId?: string;
+
+  @IsOptional()
+  @IsIn(['running', 'success', 'failed', 'cancelled'])
+  status?: 'running' | 'success' | 'failed' | 'cancelled';
+
+  @IsOptional()
+  @IsString()
+  startedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  completedAt?: string | null;
+
+  @IsOptional()
+  @IsString()
+  executedBy?: string | null;
+
+  @IsOptional()
+  @IsString()
+  errorMessage?: string | null;
+}
+
 @Controller('api/owner/v1/observability')
 @UseGuards(TenantGuard)
 export class ObservabilityController {
-  constructor(private readonly repo: ObservabilityRepository) {}
+  constructor(
+    @Inject(ObservabilityRepository)
+    private readonly repo: ObservabilityRepository,
+  ) {}
 
   // SLI endpoints
   @Get('sli')
@@ -33,9 +302,9 @@ export class ObservabilityController {
   @RequirePermission('platform.reliability.manage')
   async upsertSli(
     @TenantId() tenantId: string,
-    @Body() sli: Omit<ServiceLevelIndicator, 'id' | 'createdAt' | 'updatedAt'>,
+    @Body() sli: UpsertSliDto,
   ): Promise<ServiceLevelIndicator> {
-    return this.repo.upsertSli(tenantId, sli);
+    return this.repo.upsertSli(tenantId, sli as Omit<ServiceLevelIndicator, 'id' | 'createdAt' | 'updatedAt'>);
   }
 
   // Error Budget endpoints
@@ -49,9 +318,9 @@ export class ObservabilityController {
   @RequirePermission('platform.reliability.manage')
   async createErrorBudget(
     @TenantId() tenantId: string,
-    @Body() budget: Omit<ErrorBudget, 'id' | 'createdAt' | 'updatedAt' | 'remainingSeconds'>,
+    @Body() budget: CreateErrorBudgetDto,
   ): Promise<ErrorBudget> {
-    return this.repo.createErrorBudget(tenantId, budget);
+    return this.repo.createErrorBudget(tenantId, budget as Omit<ErrorBudget, 'id' | 'createdAt' | 'updatedAt' | 'remainingSeconds'>);
   }
 
   @Put('error-budgets/:id')
@@ -59,7 +328,7 @@ export class ObservabilityController {
   async updateErrorBudget(
     @TenantId() tenantId: string,
     @Param('id') id: string,
-    @Body() update: Partial<ErrorBudget>,
+    @Body() update: UpdateErrorBudgetDto,
   ): Promise<ErrorBudget> {
     return this.repo.updateErrorBudget(tenantId, id, update);
   }
@@ -74,13 +343,7 @@ export class ObservabilityController {
   @Post('burn-rate')
   @RequirePermission('platform.reliability.read')
   async evaluateBurnRate(
-    @Body()
-    body: {
-      objective: number;
-      periodDays: number;
-      samples: BurnRateSample[];
-      sloId: string;
-    },
+    @Body() body: EvaluateBurnRateDto,
   ): Promise<{ alerts: BurnRateAlert[]; notEvaluated: string[] }> {
     return evaluateBurnRateAlerts(
       {
@@ -115,9 +378,9 @@ export class ObservabilityController {
   @RequirePermission('platform.reliability.manage')
   async createIncident(
     @TenantId() tenantId: string,
-    @Body() incident: Omit<Incident, 'id' | 'createdAt' | 'updatedAt' | 'durationSeconds'>,
+    @Body() incident: CreateIncidentDto,
   ): Promise<Incident> {
-    return this.repo.createIncident(tenantId, incident);
+    return this.repo.createIncident(tenantId, incident as Omit<Incident, 'id' | 'createdAt' | 'updatedAt' | 'durationSeconds'>);
   }
 
   @Put('incidents/:id')
@@ -125,7 +388,7 @@ export class ObservabilityController {
   async updateIncident(
     @TenantId() tenantId: string,
     @Param('id') id: string,
-    @Body() update: Partial<Incident>,
+    @Body() update: UpdateIncidentDto,
   ): Promise<Incident> {
     return this.repo.updateIncident(tenantId, id, update);
   }
@@ -150,9 +413,9 @@ export class ObservabilityController {
   @RequirePermission('platform.reliability.manage')
   async createRunbook(
     @TenantId() tenantId: string,
-    @Body() runbook: Omit<Runbook, 'id' | 'createdAt' | 'updatedAt' | 'lastExecutedAt' | 'executionCount' | 'successCount'>,
+    @Body() runbook: CreateRunbookDto,
   ): Promise<Runbook> {
-    return this.repo.createRunbook(tenantId, runbook);
+    return this.repo.createRunbook(tenantId, runbook as Omit<Runbook, 'id' | 'createdAt' | 'updatedAt' | 'lastExecutedAt' | 'executionCount' | 'successCount'>);
   }
 
   @Put('runbooks/:id')
@@ -160,7 +423,7 @@ export class ObservabilityController {
   async updateRunbook(
     @TenantId() tenantId: string,
     @Param('id') id: string,
-    @Body() update: Partial<Runbook>,
+    @Body() update: UpdateRunbookDto,
   ): Promise<Runbook> {
     return this.repo.updateRunbook(tenantId, id, update);
   }
@@ -179,9 +442,9 @@ export class ObservabilityController {
   @RequirePermission('platform.reliability.manage')
   async createRunbookExecution(
     @TenantId() tenantId: string,
-    @Body() execution: Omit<RunbookExecution, 'id' | 'createdAt' | 'durationSeconds'>,
+    @Body() execution: CreateRunbookExecutionDto,
   ): Promise<RunbookExecution> {
-    return this.repo.createRunbookExecution(tenantId, execution);
+    return this.repo.createRunbookExecution(tenantId, execution as Omit<RunbookExecution, 'id' | 'createdAt' | 'durationSeconds'>);
   }
 
   @Put('runbook-executions/:id')
@@ -189,7 +452,7 @@ export class ObservabilityController {
   async updateRunbookExecution(
     @TenantId() tenantId: string,
     @Param('id') id: string,
-    @Body() update: Partial<RunbookExecution>,
+    @Body() update: UpdateRunbookExecutionDto,
   ): Promise<RunbookExecution> {
     return this.repo.updateRunbookExecution(tenantId, id, update);
   }

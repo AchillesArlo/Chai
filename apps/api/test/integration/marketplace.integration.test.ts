@@ -24,7 +24,7 @@ describe('InMemoryMarketplaceRepository (S4-4)', () => {
       expect(webhook.url).toBe('https://example.com/hook');
       expect(webhook.description).toBe('Test webhook');
       expect(webhook.events).toEqual(['order.created', 'payment.completed']);
-      expect(webhook.signingSecret).toMatch(/^whsec_/);
+      expect(webhook.signingSecretPlaintext).toMatch(/^whsec_/);
       expect(webhook.status).toBe('ACTIVE');
     });
 

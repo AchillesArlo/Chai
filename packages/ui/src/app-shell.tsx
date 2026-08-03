@@ -20,6 +20,8 @@ export interface NavigationItem {
   href: string;
   icon: LucideIcon;
   label: string;
+  requiredEntitlement?: string;
+  requiredRole?: string;
 }
 
 export interface AppShellProps {
@@ -30,6 +32,8 @@ export interface AppShellProps {
   surface: 'client' | 'owner';
   tenantContext: string;
   onTenantChange?: (tenant: string) => void;
+  userEntitlements?: readonly string[];
+  userRoles?: readonly string[];
 }
 
 function NavigationLink({
@@ -79,6 +83,8 @@ export function AppShell({
   surface,
   tenantContext,
   onTenantChange,
+  userEntitlements,
+  userRoles,
 }: AppShellProps) {
   const [activeTenant, setActiveTenant] = useState(tenantContext);
   const [showTenantDropdown, setShowTenantDropdown] = useState(false);
@@ -90,7 +96,21 @@ export function AppShell({
   const [searchQuery, setSearchQuery] = useState('');
   const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
 
-  const mobileItems = navigation.slice(0, 4);
+  const activeNavigation = navigation.filter((item) => {
+    if (item.requiredEntitlement && userEntitlements) {
+      if (!userEntitlements.includes(item.requiredEntitlement)) {
+        return false;
+      }
+    }
+    if (item.requiredRole && userRoles) {
+      if (!userRoles.includes(item.requiredRole)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const mobileItems = activeNavigation.slice(0, 4);
   const owner = surface === 'owner';
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -191,7 +211,7 @@ export function AppShell({
         </div>
 
         <nav aria-label="Primary" className="mt-4 flex-1 space-y-1 overflow-y-auto px-3 pb-4">
-          {navigation.map((item) => (
+          {activeNavigation.map((item) => (
             <NavigationLink currentPath={currentPath} item={item} key={item.href} />
           ))}
         </nav>

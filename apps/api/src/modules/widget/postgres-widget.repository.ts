@@ -189,18 +189,26 @@ export class PostgresWidgetRepository extends WidgetRepository {
   }
 
   override async createSession(
-    session: Omit<WidgetSession, 'id' | 'endedAt'>,
+    session: Omit<WidgetSession, 'id' | 'tenantId' | 'endedAt'>,
   ): Promise<WidgetSession> {
+    // The tenant is never taken from the caller (the widget runtime has no
+    // authenticated tenant context to trust): it is discovered from the
+    // widget the session claims to attach to, the same SECURITY DEFINER
+    // lookup listSessions/getSession/updateSession already use (migration
+    // 0070). A caller that names another tenant's widgetId gets that
+    // widget's own tenant, never a tenant it supplies itself.
+    const tenantId = await this.discoverWidgetTenant(session.widgetId);
+    if (tenantId === null) throw new Error('Widget not found');
     const id = randomUUID();
     const metadata = JSON.stringify(session.metadata);
-    return this.tx(session.tenantId, async (tx) => {
+    return this.tx(tenantId, async (tx) => {
       const rows = await tx<WidgetSessionRow[]>`
         INSERT INTO public.widget_sessions (
           id, widget_id, tenant_id, visitor_id, contact_id, conversation_id,
           ip_address, user_agent, referrer_url, landing_page, started_at,
           status, metadata
         ) VALUES (
-          ${id}, ${session.widgetId}, ${session.tenantId}, ${session.visitorId},
+          ${id}, ${session.widgetId}, ${tenantId}, ${session.visitorId},
           ${session.contactId}, ${session.conversationId}, ${session.ipAddress}::inet,
           ${session.userAgent}, ${session.referrerUrl}, ${session.landingPage},
           ${session.startedAt}::timestamptz, ${session.status}, ${metadata}::jsonb

@@ -5,10 +5,13 @@ import {
   automationRate,
   bookingExceptionRate,
   conversionRate,
+  inboundMessageVolume,
+  newConversationRate,
   qualificationRate,
   type BookingFact,
   type ConversationFact,
   type LeadFact,
+  type MessageFact,
 } from '../src/analytics';
 
 const SOURCE_UNTIL = new Date('2026-07-18T00:00:00Z');
@@ -69,5 +72,32 @@ describe('analytics metric lineage', () => {
     ];
     const metric = bookingExceptionRate(bookings, SOURCE_UNTIL);
     expect(metric.value).toBeCloseTo(2 / 3);
+  });
+
+  it('inbound message volume counts facts and reports its own denominator', () => {
+    const facts: MessageFact[] = [
+      { aiHandled: true, conversationCreated: true, occurredAt: SOURCE_UNTIL },
+      { aiHandled: true, conversationCreated: false, occurredAt: SOURCE_UNTIL },
+      { aiHandled: false, conversationCreated: false, occurredAt: SOURCE_UNTIL },
+    ];
+    const metric = inboundMessageVolume(facts, SOURCE_UNTIL);
+    expect(metric.value).toBe(3);
+    expect(metric.denominator).toBe(3);
+    expect(metric.mix).toBe('BLENDED');
+    expect(inboundMessageVolume([], SOURCE_UNTIL).value).toBe(0);
+  });
+
+  it('new conversation rate divides fresh conversations over inbound volume', () => {
+    const facts: MessageFact[] = [
+      { aiHandled: true, conversationCreated: true, occurredAt: SOURCE_UNTIL },
+      { aiHandled: true, conversationCreated: false, occurredAt: SOURCE_UNTIL },
+      { aiHandled: true, conversationCreated: false, occurredAt: SOURCE_UNTIL },
+      { aiHandled: true, conversationCreated: false, occurredAt: SOURCE_UNTIL },
+    ];
+    const metric = newConversationRate(facts, SOURCE_UNTIL);
+    expect(metric.value).toBeCloseTo(1 / 4);
+    expect(metric.denominator).toBe(4);
+    expect(metric.mix).toBe('BOT');
+    expect(newConversationRate([], SOURCE_UNTIL).value).toBe(0);
   });
 });

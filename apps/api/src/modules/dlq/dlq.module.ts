@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
 
 import { DlqController } from './dlq.controller';
+import { OwnerDlqController } from './owner-dlq.controller';
 import { DlqRepository } from './dlq.repository';
 
 @Module({
-  controllers: [DlqController],
+  controllers: [DlqController, OwnerDlqController],
   providers: [DlqRepository],
   exports: [DlqRepository],
 })

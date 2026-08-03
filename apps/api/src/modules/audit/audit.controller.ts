@@ -8,7 +8,8 @@ import {
   Req,
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
-import { IsOptional, IsString, IsISO8601, IsInt, Min } from 'class-validator';
+import { IsOptional, IsString, IsISO8601, IsInt, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
 
 import { RequireAudience } from '../../auth/require-audience.decorator';
 import { RequirePermission } from '../../guards/require-permission.decorator';
@@ -47,8 +48,10 @@ class AuditLogQueryDto {
   endDate?: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
   limit?: number;
 
   @IsOptional()

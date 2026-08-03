@@ -27,6 +27,14 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Supply-chain gate (blueprint §4 poin 7, FASE 33.C). Fails the build on
+      # known high/critical advisories in the installed dependency tree. pnpm
+      # audit is built in — no new dependency, no external account or API key.
+      # --audit-level=high keeps moderate/low advisories from blocking merges.
+      # Placed right after install so it runs against the frozen lockfile before
+      # the slower suites.
+      - run: pnpm audit --audit-level=high
+
       # Blocking. The import-boundary zones live in eslint.config.mjs, so this is
       # what turns an architecture violation into a failed build rather than a
       # note in a document. Keep it ahead of the slower suites so it fails fast.

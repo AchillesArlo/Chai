@@ -26,6 +26,8 @@ import {
   CredentialStoreToken,
   type CredentialStore as ApiCredentialStore,
 } from './credential-store.di';
+import type { RefreshTokenStore } from './refresh-token-store';
+import { RefreshTokenStoreToken } from './refresh-token-store.di';
 import { issueSessionResponse, type LoginResponseBody } from './session-tokens';
 import { RequirePermission } from '../guards/require-permission.decorator';
 import { TOKEN_CONFIG_TOKEN, type TokenConfigProvider } from './token-config.di';
@@ -51,6 +53,8 @@ export class OwnerMfaController {
   constructor(
     @Inject(CredentialStoreToken)
     private readonly credentialStore: ApiCredentialStore,
+    @Inject(RefreshTokenStoreToken)
+    private readonly refreshTokenStore: RefreshTokenStore,
     @Inject(TOKEN_CONFIG_TOKEN)
     private readonly tokenConfigProvider: TokenConfigProvider,
   ) {}
@@ -144,7 +148,7 @@ export class OwnerMfaController {
       platformRole: 'PLATFORM_OWNER',
       status: 'ACTIVE',
     };
-    return issueSessionResponse(upgraded, this.tokenConfigProvider());
+    return issueSessionResponse(upgraded, this.tokenConfigProvider(), this.refreshTokenStore);
   }
 }
 

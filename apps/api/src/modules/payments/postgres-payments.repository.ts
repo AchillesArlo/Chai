@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 
 import {
@@ -11,11 +11,18 @@ import {
   type PaymentSession,
   type PaymentStatus,
 } from '@chai/connectors/mock-payment';
+import { createMidtransAdapter } from '@chai/connectors/midtrans';
+import { readWebhookEventTime, verifyWebhookTimestamp } from '@chai/connectors/webhook-verification';
 
 import { API_SERVICE_PRINCIPAL_ID } from '../../database/api-ids';
 import { DATABASE } from '../../database/database.module';
 import { decidePaymentTransition } from '@chai/domain';
+import {
+  PaymentNotificationPort,
+  PaymentOrderPort,
+} from '../shared/action-tool.port';
 import { PaymentsRepository } from './payments.repository';
+import { PaymentProviderAccountRepository } from './payment-provider-account.repository';
 
 interface PaymentRow {
   id: string;
@@ -29,39 +36,105 @@ interface PaymentRow {
   checkout_url: string;
   expires_at: Date;
   provider: string;
+  order_id?: string | null;
+  invoice_id?: string | null;
   created_at: Date;
   updated_at: Date;
 }
 
 const PROVIDER = 'mock-payment';
 
-/** Provider event time, when the payload carries one. */
-function readEventTime(raw: Uint8Array): Date | null {
-  try {
-    const body = JSON.parse(Buffer.from(raw).toString('utf8')) as {
-      eventAt?: string;
-      occurredAt?: string;
-    };
-    const value = body.eventAt ?? body.occurredAt;
-    if (!value) return null;
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  } catch {
-    return null;
-  }
-}
-
 @Injectable()
 export class PostgresPaymentsRepository extends PaymentsRepository {
   private killSwitch = false;
+  // FASE 5 — REQ-17-058: per-tenant Midtrans server key. Jika tenant punya
+  // baris aktif di chai.payment_provider_account, server_key diambil dari
+  // SecretService (per-tenant); jika tidak, fallback ke env global
+  // MIDTRANS_SERVER_KEY (ponytail: transisi, semua tenant berbagi satu
+  // merchant sampai migration selesai). Adapter Midtrans dibuat on-demand
+  // per (tenantId, provider) saat handleWebhook; tanpa key, handleWebhook
+  // menolak.
+  private readonly globalMidtrans = createMidtransAdapter({
+    serverKey: process.env.MIDTRANS_SERVER_KEY,
+    sandbox: process.env.MIDTRANS_SANDBOX !== 'false',
+  });
 
-  constructor(@Inject(DATABASE) private readonly database: Database) {
+  constructor(
+    @Inject(DATABASE) private readonly database: Database,
+    @Optional()
+    @Inject(PaymentProviderAccountRepository)
+    private readonly providerAccounts?: PaymentProviderAccountRepository,
+    @Optional()
+    @Inject(PaymentOrderPort)
+    private readonly orders?: PaymentOrderPort,
+    @Optional()
+    @Inject(PaymentNotificationPort)
+    private readonly notifications?: PaymentNotificationPort,
+  ) {
     super();
+    // ponytail: FASE 5 — providerAccounts tersedia untuk resolve server_key
+    // per-tenant di createCheckout masa depan. verifyProviderWebhook masih
+    // pakai globalMidtrans (tenantId hanya terbaca setelah verifikasi).
+    void this.providerAccounts;
+  }
+
+  /**
+   * Delegates to the provider's own verifier and normalizes the result to a
+   * common shape. Comparing a local constant here instead would mean
+   * swapping in a real PSP changed nothing about how a webhook is trusted
+   * (17_PAYMENT §2.4, 10_SECURITY §9) — each provider's signature check stays
+   * in its connector, this only picks which one to call.
+   *
+   * JNE is deliberately absent: its webhook has no signature at all (the
+   * provider does not offer one), so wiring it to this public endpoint
+   * without a mitigation would be a new unauthenticated write path. Until an
+   * infra-level mitigation (IP allowlist) plus mandatory reconciliation is in
+   * place, JNE webhooks are not accepted here — see
+   * docs/audit/2026-07-29/DAFTAR-CELAH-MASTER.md.
+   */
+  private verifyProviderWebhook(
+    provider: string,
+    raw: Uint8Array,
+    signature: string | undefined,
+  ): {
+    externalId: string;
+    providerEventId: string;
+    status: PaymentStatus;
+    tenantId: string;
+    eventAt: Date | null;
+  } | null {
+    if (provider === 'mock-payment') {
+      const verification = verifyMockPaymentWebhookSignature(raw, signature);
+      if (!verification.verified || !verification.payload) {
+        return null;
+      }
+      return { ...verification.payload, eventAt: readWebhookEventTime(raw) };
+    }
+    if (provider === 'midtrans') {
+      // ponytail: FASE 5 — verifikasi signature masih pakai server_key global
+      // (env) di sini karena tenantId hanya terbaca SETELAH verifikasi sukses.
+      // Per-tenant key resolution di webhook perlu pre-parse order_id dari
+      // payload (vektor baru) — di luar scope FASE 5 inti. Repo
+      // PaymentProviderAccountRepository + SecretService sudah siap; wiring
+      // penuh menyusul saat Midtrans adapter mendukung per-tenant key.
+      const result = this.globalMidtrans.handleWebhook(raw, signature);
+      if (!result.verified || !result.event) {
+        return null;
+      }
+      return {
+        eventAt: result.event.occurredAt,
+        externalId: result.event.externalId,
+        providerEventId: result.event.providerEventId,
+        status: result.event.status,
+        tenantId: result.event.tenantId,
+      };
+    }
+    return null;
   }
 
   override async createCheckout(
     tenantId: string,
-    input: { amount: number; currency: string; idempotencyKey: string },
+    input: { amount: number; currency: string; idempotencyKey: string; invoiceId?: string | null; orderId?: string | null },
   ): Promise<PaymentSession> {
     if (this.killSwitch) {
       throw new Error('PAYMENT_KILL_SWITCH');
@@ -89,10 +162,20 @@ export class PostgresPaymentsRepository extends PaymentsRepository {
         await tx`
           INSERT INTO chai.payment
             (id, tenant_id, external_id, amount_cents, currency, status,
-             idempotency_key, checkout_url, expires_at, provider)
+             idempotency_key, checkout_url, expires_at, provider, order_id, invoice_id)
           VALUES
             (${id}, ${tenantId}, ${externalId}, ${input.amount}, ${input.currency},
-             'PENDING', ${input.idempotencyKey}, ${checkoutUrl}, ${expiresAt}, ${PROVIDER})
+             'PENDING', ${input.idempotencyKey}, ${checkoutUrl}, ${expiresAt}, ${PROVIDER},
+             ${input.orderId ?? null}::uuid, ${input.invoiceId ?? null}::uuid)
+        `;
+        const reminderId = randomUUID();
+        const dueAt = new Date(Date.now() + 24 * 3600_000);
+        await tx`
+          INSERT INTO chai.follow_up_job
+            (id, tenant_id, payment_id, due_at, status, payload)
+          VALUES
+            (${reminderId}, ${tenantId}, ${id}, ${dueAt}, 'PENDING',
+             ${tx.json({ paymentExternalId: externalId, type: 'payment_reminder' })})
         `;
         return {
           amount: input.amount,
@@ -141,26 +224,72 @@ export class PostgresPaymentsRepository extends PaymentsRepository {
   }
 
   override async applyWebhook(
+    provider: string,
     raw: Uint8Array,
     signature: string | undefined,
   ): Promise<{
     event: { externalId: string; status: PaymentStatus; tenantId: string } | null;
     verified: boolean;
   }> {
-    // Verification is delegated to the provider's shared verifier. Comparing a
-    // local constant here would mean swapping in a real PSP changed nothing
-    // about how a webhook is trusted (17_PAYMENT §2.4, 10_SECURITY §9).
-    const verification = verifyMockPaymentWebhookSignature(raw, signature);
-    if (!verification.verified || !verification.payload) {
+    const verified = this.verifyProviderWebhook(provider, raw, signature);
+    if (!verified) {
       return { event: null, verified: false };
     }
-    const { externalId, status, tenantId } = verification.payload;
-    const eventAt = readEventTime(raw);
+    const { externalId, providerEventId, status, tenantId, eventAt } = verified;
+
+    // A valid signature never expires on its own — without a timestamp check
+    // a captured (or provider-redelivered) request stays replayable forever
+    // (REQ-10-016, REQ-09-006, REQ-09-023). Rejected here, before any
+    // business state is touched or the dedup row is written.
+    if (!verifyWebhookTimestamp(eventAt).ok) {
+      return { event: null, verified: false };
+    }
 
     return withTenantTransaction(
       this.database,
       { principalId: API_SERVICE_PRINCIPAL_ID, tenantId },
       async (tx) => {
+        // Dedup gate: a provider redelivering the same event id for the same
+        // tenant+external payment (retry, or a captured request replayed
+        // inside the window) must not be processed twice. The UNIQUE
+        // constraint on (tenant_id, provider, external_id, provider_event_id)
+        // is the actual enforcement; ON CONFLICT DO NOTHING makes a repeat
+        // insert a no-op instead of an error, and the row count tells us
+        // whether this is the first time we have seen this event.
+        const inserted = await tx`
+          INSERT INTO chai.payment_webhook_event
+            (id, tenant_id, provider, external_id, provider_event_id, event_at, verified)
+          VALUES (
+            ${randomUUID()},
+            ${tenantId},
+            ${provider},
+            ${externalId},
+            ${providerEventId},
+            ${eventAt},
+            true
+          )
+          ON CONFLICT (tenant_id, provider, external_id, provider_event_id) DO NOTHING
+          RETURNING id
+        `;
+        if (inserted.length === 0) {
+          // Already seen: report the current state rather than reprocessing.
+          const existing: PaymentRow[] = await tx`
+            SELECT * FROM chai.payment
+            WHERE tenant_id = ${tenantId} AND external_id = ${externalId}
+          `;
+          const existingRow = existing[0];
+          return {
+            event: existingRow
+              ? {
+                  externalId: existingRow.external_id,
+                  status: existingRow.status,
+                  tenantId: existingRow.tenant_id,
+                }
+              : null,
+            verified: true,
+          };
+        }
+
         const current: PaymentRow[] = await tx`
           SELECT * FROM chai.payment
           WHERE tenant_id = ${tenantId} AND external_id = ${externalId}
@@ -256,8 +385,18 @@ export class PostgresPaymentsRepository extends PaymentsRepository {
               cancelledReminders = await stopPaymentReminders(
                 tx,
                 tenantId,
-                applied.external_id,
+                applied.id,
               );
+              if (applied.invoice_id && this.orders) {
+                await this.orders.markInvoicePaid(tenantId, applied.invoice_id);
+              }
+              if (this.notifications) {
+                // FASE 7: notifikasi in-app saja, channel ke contact di luar scope
+                await this.notifications.notify(tenantId, {
+                  title: 'Pembayaran diterima',
+                  message: `Pembayaran sebesar ${applied.currency} ${applied.amount_cents} (${applied.external_id}) telah diterima.`,
+                });
+              }
             }
             return applied;
           },

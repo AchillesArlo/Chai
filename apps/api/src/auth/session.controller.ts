@@ -13,14 +13,18 @@ import { RequireAudience } from './require-audience.decorator';
 export class OwnerSessionController {
   @Get()
   session(@Req() request: FastifyRequest) {
+    const tenantId = request.tenantContext?.tenantId;
     return {
       audience: request.principal?.audience,
+      hint: tenantId
+        ? `Acting as owner with tenant context: ${tenantId}`
+        : 'Acting as platform owner (no tenant context selected)',
       permissions: [...PLATFORM_OWNER_PERMISSIONS].sort(),
       role:
         request.principal?.kind === 'USER'
           ? request.principal.platformRole
           : undefined,
-      tenantId: request.tenantContext?.tenantId,
+      tenantId,
     };
   }
 }
@@ -34,13 +38,18 @@ export class ClientSessionController {
       request.principal?.kind === 'USER'
         ? request.principal.membership
         : undefined;
+    const tenantId = request.tenantContext?.tenantId ?? membership?.tenantId;
     return {
       audience: request.principal?.audience,
+      hint: membership
+        ? `Authenticated as ${membership.role} in tenant ${tenantId}`
+        : 'No active tenant membership found — contact support',
       permissions: membership
         ? [...permissionsForRole(membership.role)].sort()
         : [],
       role: membership?.role,
-      tenantId: request.tenantContext?.tenantId ?? membership?.tenantId,
+      tenantId,
     };
   }
 }
+

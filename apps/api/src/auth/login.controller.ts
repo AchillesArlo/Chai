@@ -11,7 +11,15 @@ import {
 import type { FastifyRequest } from 'fastify';
 
 import {
-  type Audience,   type ClientRole,   extractBearerToken,   type MfaState,   verifyAccessToken,   verifyRefreshToken,   type Principal,   type TokenConfig,
+  type Audience,
+  type ClientRole,
+  extractBearerToken,
+  type MfaState,
+  SESSION_POLICIES,
+  verifyAccessToken,
+  verifyRefreshToken,
+  type Principal,
+  type TokenConfig,
 } from '@chai/auth';
 import {
   authenticateCredentials,
@@ -26,7 +34,8 @@ import {
   CredentialStoreToken,
   type CredentialStore as ApiCredentialStore,
 } from './credential-store.di';
-import { REFRESH_TOKEN_STORE } from './refresh-token-store';
+import type { RefreshTokenStore } from './refresh-token-store';
+import { RefreshTokenStoreToken } from './refresh-token-store.di';
 import { issueSessionResponse, type LoginResponseBody } from './session-tokens';
 import { TOKEN_CONFIG_TOKEN, type TokenConfigProvider } from './token-config.di';
 
@@ -41,6 +50,7 @@ async function performLogin(
   body: unknown,
   audience: Audience,
   credentialStore: ApiCredentialStore,
+  refreshTokenStore: RefreshTokenStore,
   tokenConfig: TokenConfig,
 ): Promise<LoginResponseBody> {
   const parsed = LoginRequestSchema.safeParse(body);
@@ -71,7 +81,7 @@ async function performLogin(
     principal = { ...principal, mfaState: 'REQUIRED' };
   }
 
-  return issueSessionResponse(principal, tokenConfig);
+  return issueSessionResponse(principal, tokenConfig, refreshTokenStore);
 }
 
 @Controller('auth')
@@ -79,6 +89,8 @@ export class OwnerLoginController {
   constructor(
     @Inject(CredentialStoreToken)
     private readonly credentialStore: ApiCredentialStore,
+    @Inject(RefreshTokenStoreToken)
+    private readonly refreshTokenStore: RefreshTokenStore,
     @Inject(TOKEN_CONFIG_TOKEN)
     private readonly tokenConfigProvider: TokenConfigProvider,
   ) {}
@@ -90,6 +102,7 @@ export class OwnerLoginController {
       body,
       'owner-console',
       this.credentialStore,
+      this.refreshTokenStore,
       this.tokenConfigProvider(),
     );
   }
@@ -100,6 +113,7 @@ export class OwnerLoginController {
     return performRefresh(
       body,
       this.tokenConfigProvider(),
+      this.refreshTokenStore,
       'owner-console',
     );
   }
@@ -107,7 +121,12 @@ export class OwnerLoginController {
   @Post('logout')
   @HttpCode(204)
   async logout(@Req() request: FastifyRequest): Promise<void> {
-    await performLogout(request, this.tokenConfigProvider(), 'owner-console');
+    await performLogout(
+      request,
+      this.tokenConfigProvider(),
+      this.refreshTokenStore,
+      'owner-console',
+    );
   }
 }
 
@@ -116,6 +135,8 @@ export class ClientLoginController {
   constructor(
     @Inject(CredentialStoreToken)
     private readonly credentialStore: ApiCredentialStore,
+    @Inject(RefreshTokenStoreToken)
+    private readonly refreshTokenStore: RefreshTokenStore,
     @Inject(TOKEN_CONFIG_TOKEN)
     private readonly tokenConfigProvider: TokenConfigProvider,
   ) {}
@@ -127,6 +148,7 @@ export class ClientLoginController {
       body,
       'client-portal',
       this.credentialStore,
+      this.refreshTokenStore,
       this.tokenConfigProvider(),
     );
   }
@@ -137,6 +159,7 @@ export class ClientLoginController {
     return performRefresh(
       body,
       this.tokenConfigProvider(),
+      this.refreshTokenStore,
       'client-portal',
     );
   }
@@ -144,13 +167,19 @@ export class ClientLoginController {
   @Post('logout')
   @HttpCode(204)
   async logout(@Req() request: FastifyRequest): Promise<void> {
-    await performLogout(request, this.tokenConfigProvider(), 'client-portal');
+    await performLogout(
+      request,
+      this.tokenConfigProvider(),
+      this.refreshTokenStore,
+      'client-portal',
+    );
   }
 }
 
 async function performRefresh(
   body: unknown,
   tokenConfig: TokenConfig,
+  refreshTokenStore: RefreshTokenStore,
   expectedAudience: Audience,
 ): Promise<LoginResponseBody> {
   const parsed = RefreshRequestSchema.safeParse(body);
@@ -165,20 +194,42 @@ async function performRefresh(
   if (claims.aud !== expectedAudience) {
     throw new UnauthorizedException('Invalid refresh token');
   }
-  if (REFRESH_TOKEN_STORE.isRevoked(claims.jti)) {
-    // Refresh token reuse detected: revoke entire family for this principal.
-    // ponytail: in-memory store; production table would also revoke by family id.
+
+  // Enforce idle session timeout (REQ-10-003, REQ-10-004):
+  // Owner idle limit: 30m (1800s); Client idle limit: 60m (3600s).
+  const idleLimitSeconds =
+    expectedAudience === 'owner-console'
+      ? SESSION_POLICIES.owner.idleTimeoutSeconds
+      : SESSION_POLICIES.client.idleTimeoutSeconds;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (typeof claims.iat === 'number' && nowSeconds - claims.iat > idleLimitSeconds) {
+    const familyId = await refreshTokenStore.getFamilyId(claims.jti);
+    if (familyId) {
+      await refreshTokenStore.revokeFamily(familyId);
+    }
+    throw new UnauthorizedException('Session expired due to inactivity');
+  }
+  if (await refreshTokenStore.isRevoked(claims.jti)) {
+    // Refresh token reuse detected: this jti was already rotated away (or
+    // logged out) earlier, yet it is being presented again — the signal that
+    // it was stolen. Revoke every token in its family, not just this one, so
+    // a thief cannot keep using whichever token in the chain they hold.
+    const familyId = await refreshTokenStore.getFamilyId(claims.jti);
+    if (familyId) {
+      await refreshTokenStore.revokeFamily(familyId);
+    }
     throw new ConflictException('Refresh token no longer valid');
   }
 
-  // Rotate: revoke old, issue new.
-  REFRESH_TOKEN_STORE.revoke(claims.jti);
+  // Rotate: revoke old, issue new in the same family.
+  const familyId = (await refreshTokenStore.getFamilyId(claims.jti)) ?? claims.jti;
+  await refreshTokenStore.revoke(claims.jti);
 
   const refreshedPrincipal = rebuildPrincipalFromClaims(claims);
   if (!refreshedPrincipal) {
     throw new UnauthorizedException('Invalid refresh token');
   }
-  return issueSessionResponse(refreshedPrincipal, tokenConfig);
+  return issueSessionResponse(refreshedPrincipal, tokenConfig, refreshTokenStore, familyId);
 }
 
 function rebuildPrincipalFromClaims(claims: {
@@ -221,6 +272,7 @@ function rebuildPrincipalFromClaims(claims: {
 async function performLogout(
   request: FastifyRequest,
   tokenConfig: TokenConfig,
+  refreshTokenStore: RefreshTokenStore,
   expectedAudience: Audience,
 ): Promise<void> {
   const token = extractBearerToken(request.headers.authorization);
@@ -229,13 +281,7 @@ async function performLogout(
   if (!result.ok || !result.claims) return;
   if (result.claims.aud !== expectedAudience) return;
 
-  REFRESH_TOKEN_STORE.revokeAllForPrincipal(result.claims.sub, {
-    id: result.claims.sub,
-    kind: 'USER',
-    audience: expectedAudience,
-    status: 'ACTIVE',
-    authenticatedAt: new Date(0),
-  });
+  await refreshTokenStore.revokeAllForPrincipal(result.claims.sub);
 }
 
 export { LOGIN_AUDIENCE_META };

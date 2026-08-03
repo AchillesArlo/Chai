@@ -5,6 +5,7 @@ import { RequireAudience } from '../../auth/require-audience.decorator';
 import { RequirePermission } from '../../guards/require-permission.decorator';
 import {
   AnalyticsRepository,
+  type MessageOutcomesDashboard,
   type OutcomesDashboard,
 } from './analytics.repository';
 
@@ -26,6 +27,14 @@ export class AnalyticsController {
   @RequirePermission('analytics.read')
   async outcomes(@Req() request: FastifyRequest): Promise<OutcomesDashboard> {
     return this.repository.getOutcomes(tenantScope(request));
+  }
+
+  @Get('message-outcomes')
+  @RequirePermission('analytics.read')
+  async messageOutcomes(
+    @Req() request: FastifyRequest,
+  ): Promise<MessageOutcomesDashboard> {
+    return this.repository.getMessageOutcomes(tenantScope(request));
   }
 
   @Get('overview')

@@ -50,6 +50,41 @@ export function buildClearCookie(name: string, path = '/'): string {
   return `${name}=; Path=${path}; Max-Age=0; HttpOnly; SameSite=lax`;
 }
 
+/**
+ * CSRF defense-in-depth (REQ-10-012) for the BFF proxy route that reads the
+ * session cookie and forwards it as a Bearer token. SameSite=Lax on the
+ * cookie already stops it being sent on a cross-site non-GET request, which
+ * covers every mutating route this proxy forwards; this is a second,
+ * independent check at the one place that actually reads the cookie.
+ *
+ * A same-site browser request's Origin (or, lacking that, Referer — some
+ * browsers omit Origin on same-origin requests) always matches this host: a
+ * cross-site forger cannot set either header, so a mismatch, or both being
+ * absent, means the request did not originate from this app.
+ */
+export function requestOriginIsTrusted(
+  headers: { get(name: string): string | null },
+  host: string | null,
+): boolean {
+  const origin = headers.get('origin');
+  if (origin) {
+    try {
+      return new URL(origin).host === host;
+    } catch {
+      return false;
+    }
+  }
+  const referer = headers.get('referer');
+  if (!referer) {
+    return false;
+  }
+  try {
+    return new URL(referer).host === host;
+  } catch {
+    return false;
+  }
+}
+
 export interface SessionState {
   hasAccessToken: boolean;
   hasRefreshToken: boolean;

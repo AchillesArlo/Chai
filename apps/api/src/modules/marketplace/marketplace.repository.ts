@@ -7,6 +7,7 @@ import {
 } from '@chai/database';
 
 import { DATABASE, SERVICE_PRINCIPAL_ID } from '../../database/database.module';
+import { SecretService } from '../secret/secret.service';
 
 export type WebhookStatus = 'ACTIVE' | 'PAUSED' | 'DISABLED';
 export type MarketplaceCategory = 'connector' | 'automation' | 'analytics' | 'channel';
@@ -18,10 +19,24 @@ export interface WebhookSubscriptionRecord {
   url: string;
   description: string | null;
   events: string[];
-  signingSecret: string;
+  /**
+   * Vault reference (format `v1:{tenantId}:{key}:{version}`) ke SecretService.
+   * Plaintext signing secret tidak pernah disimpan di DB; kolom DB hanya
+   * menyimpan reference ini (FASE 5 — REQ-05-003).
+   */
+  signingSecretRef: string | null;
   status: WebhookStatus;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Hasil createWebhook: record + plaintext signing secret untuk one-time reveal
+ * ke pemilik webhook (pola Stripe/Discord). Plaintext tidak dipersisten; hanya
+ * dikembalikan sekali saat pembuatan.
+ */
+export interface CreatedWebhook extends WebhookSubscriptionRecord {
+  signingSecretPlaintext: string;
 }
 
 export interface MarketplaceListingRecord {
@@ -56,7 +71,7 @@ export abstract class MarketplaceRepository {
   abstract createWebhook(
     tenantId: string,
     input: { url: string; description?: string; events?: string[] },
-  ): Promise<WebhookSubscriptionRecord>;
+  ): Promise<CreatedWebhook>;
   abstract updateWebhook(
     tenantId: string,
     id: string,
@@ -105,7 +120,7 @@ interface WebhookRow {
   url: string;
   description: string | null;
   events: unknown;
-  signing_secret: string;
+  signing_secret_ref: string | null;
   status: WebhookStatus;
   created_at: Date;
   updated_at: Date;
@@ -143,7 +158,7 @@ function toWebhookRecord(row: WebhookRow): WebhookSubscriptionRecord {
     url: row.url,
     description: row.description,
     events: parseJson<string[]>(row.events) ?? [],
-    signingSecret: row.signing_secret,
+    signingSecretRef: row.signing_secret_ref,
     status: row.status,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
@@ -202,21 +217,25 @@ export class InMemoryMarketplaceRepository extends MarketplaceRepository {
   override async createWebhook(
     tenantId: string,
     input: { url: string; description?: string; events?: string[] },
-  ): Promise<WebhookSubscriptionRecord> {
+  ): Promise<CreatedWebhook> {
     const now = new Date().toISOString();
+    const id = randomUUID();
+    const plaintext = `whsec_${randomUUID().replace(/-/g, '')}`;
+    // ponytail: in-memory repo tidak punya SecretService; ref null karena
+    // plaintext hanya disimpan di memory process untuk test.
     const record: WebhookSubscriptionRecord = {
-      id: randomUUID(),
+      id,
       tenantId,
       url: input.url,
       description: input.description ?? null,
       events: input.events ?? [],
-      signingSecret: `whsec_${randomUUID().replace(/-/g, '')}`,
+      signingSecretRef: null,
       status: 'ACTIVE',
       createdAt: now,
       updatedAt: now,
     };
     this.webhooks.set(record.id, record);
-    return record;
+    return { ...record, signingSecretPlaintext: plaintext };
   }
 
   override async updateWebhook(
@@ -364,14 +383,17 @@ export class InMemoryMarketplaceRepository extends MarketplaceRepository {
 
 @Injectable()
 export class PostgresMarketplaceRepository extends MarketplaceRepository {
-  constructor(@Inject(DATABASE) private readonly database: Database) {
+  constructor(
+    @Inject(DATABASE) private readonly database: Database,
+    private readonly secretService?: SecretService,
+  ) {
     super();
   }
 
   override async listWebhooks(tenantId: string): Promise<WebhookSubscriptionRecord[]> {
     return withTenantTransaction(this.database, { tenantId, principalId: SERVICE_PRINCIPAL_ID }, async (tx) => {
       const rows = await tx<WebhookRow[]>`
-        SELECT id, tenant_id, url, description, events, signing_secret, status, created_at, updated_at
+        SELECT id, tenant_id, url, description, events, signing_secret_ref, status, created_at, updated_at
           FROM chai.webhook_subscription
           WHERE tenant_id = ${tenantId}::uuid
           ORDER BY created_at DESC
@@ -383,7 +405,7 @@ export class PostgresMarketplaceRepository extends MarketplaceRepository {
   override async getWebhook(tenantId: string, id: string): Promise<WebhookSubscriptionRecord | null> {
     return withTenantTransaction(this.database, { tenantId, principalId: SERVICE_PRINCIPAL_ID }, async (tx) => {
       const rows = await tx<WebhookRow[]>`
-        SELECT id, tenant_id, url, description, events, signing_secret, status, created_at, updated_at
+        SELECT id, tenant_id, url, description, events, signing_secret_ref, status, created_at, updated_at
           FROM chai.webhook_subscription
           WHERE tenant_id = ${tenantId}::uuid AND id = ${id}::uuid
       `;
@@ -394,18 +416,29 @@ export class PostgresMarketplaceRepository extends MarketplaceRepository {
   override async createWebhook(
     tenantId: string,
     input: { url: string; description?: string; events?: string[] },
-  ): Promise<WebhookSubscriptionRecord> {
+  ): Promise<CreatedWebhook> {
     const id = randomUUID();
     const signingSecret = `whsec_${randomUUID().replace(/-/g, '')}`;
+    // FASE 5 — REQ-05-003: plaintext signing secret tidak pernah disimpan di
+    // DB. Enkripsi via SecretService, simpan reference di kolom
+    // signing_secret_ref. Plaintext hanya dikembalikan sekali ke caller
+    // (one-time reveal, pola Stripe/Discord).
+    const secretKey = `webhook_signing_secret:${id}`;
+    const signingSecretRef = this.secretService
+      ? await this.secretService.store(tenantId, secretKey, signingSecret)
+      : // ponytail: tanpa SecretService (dev tanpa master key), simpan ref
+        // mock kosong — createWebhook tetap return plaintext untuk test.
+        null;
     return withTenantTransaction(this.database, { tenantId, principalId: SERVICE_PRINCIPAL_ID }, async (tx) => {
       const rows = (await tx`
-        INSERT INTO chai.webhook_subscription (id, tenant_id, url, description, events, signing_secret)
-        VALUES (${id}::uuid, ${tenantId}::uuid, ${input.url}, ${input.description ?? null}, ${tx.json((input.events ?? []) as Parameters<typeof tx.json>[0])}::jsonb, ${signingSecret})
-        RETURNING id, tenant_id, url, description, events, signing_secret, status, created_at, updated_at
+        INSERT INTO chai.webhook_subscription (id, tenant_id, url, description, events, signing_secret_ref)
+        VALUES (${id}::uuid, ${tenantId}::uuid, ${input.url}, ${input.description ?? null}, ${tx.json((input.events ?? []) as Parameters<typeof tx.json>[0])}::jsonb, ${signingSecretRef})
+        RETURNING id, tenant_id, url, description, events, signing_secret_ref, status, created_at, updated_at
       `) as unknown as WebhookRow[];
       const row = rows[0];
       if (!row) throw new Error('webhook_subscription insert returned no row');
-      return toWebhookRecord(row);
+      const record = toWebhookRecord(row);
+      return { ...record, signingSecretPlaintext: signingSecret };
     });
   }
 
@@ -423,7 +456,7 @@ export class PostgresMarketplaceRepository extends MarketplaceRepository {
             status = COALESCE(${input.status ?? null}, status),
             updated_at = now()
         WHERE tenant_id = ${tenantId}::uuid AND id = ${id}::uuid
-        RETURNING id, tenant_id, url, description, events, signing_secret, status, created_at, updated_at
+        RETURNING id, tenant_id, url, description, events, signing_secret_ref, status, created_at, updated_at
       `) as unknown as WebhookRow[];
       if (!rows[0]) throw new Error('webhook not found');
       return toWebhookRecord(rows[0]);

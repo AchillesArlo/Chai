@@ -98,7 +98,6 @@ describe('WidgetRepository', () => {
 
       const session = await repo.createSession({
         widgetId: widget.id,
-        tenantId,
         visitorId: 'visitor-123',
         contactId: null,
         conversationId: null,
@@ -114,6 +113,27 @@ describe('WidgetRepository', () => {
       expect(session.id).toBeDefined();
       expect(session.visitorId).toBe('visitor-123');
       expect(session.status).toBe('active');
+      // The tenant comes from the widget, never from a caller-supplied field
+      // (REQ-09-014): createSession's contract has no tenantId parameter.
+      expect(session.tenantId).toBe(tenantId);
+    });
+
+    it('refuses to create a session for a widget that does not exist', async () => {
+      await expect(
+        repo.createSession({
+          widgetId: 'nonexistent-widget',
+          visitorId: null,
+          contactId: null,
+          conversationId: null,
+          ipAddress: null,
+          userAgent: null,
+          referrerUrl: null,
+          landingPage: null,
+          startedAt: new Date().toISOString(),
+          status: 'active',
+          metadata: {},
+        }),
+      ).rejects.toThrow('Widget not found');
     });
 
     it('should list sessions by widget', async () => {
@@ -135,7 +155,6 @@ describe('WidgetRepository', () => {
 
       await repo.createSession({
         widgetId: widget.id,
-        tenantId,
         visitorId: 'visitor-1',
         contactId: null,
         conversationId: null,

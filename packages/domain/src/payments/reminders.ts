@@ -20,12 +20,7 @@ import type { DatabaseTransaction } from '@chai/database';
  * already-delivered reminder is not matched, so even a double call cannot
  * "re-cancel" or revive anything.
  *
- * Reminders are matched on `payload->>'paymentExternalId'` because
- * `chai.follow_up_job` has no payment foreign key and `chai.payment` carries no
- * business reference; migration 0071 adds a partial index for this lookup.
- * ponytail: payload-key join, not a real FK -- upgrade path is a
- * `payment_id uuid REFERENCES chai.payment(id)` column once payments carry a
- * business reference, at which point this predicate becomes that join.
+ * Reminders are matched on `payment_id` FK column in `chai.follow_up_job`.
  *
  * @returns the ids of the reminders actually cancelled, so the caller can put a
  *   count in the audit trail instead of asserting silence.
@@ -33,7 +28,7 @@ import type { DatabaseTransaction } from '@chai/database';
 export async function stopPaymentReminders(
   transaction: DatabaseTransaction,
   tenantId: string,
-  paymentExternalId: string,
+  paymentId: string,
 ): Promise<string[]> {
   const rows = await transaction<{ id: string }[]>`
     UPDATE chai.follow_up_job
@@ -41,7 +36,7 @@ export async function stopPaymentReminders(
         updated_at = now()
     WHERE tenant_id = ${tenantId}
       AND status = 'PENDING'
-      AND payload ->> 'paymentExternalId' = ${paymentExternalId}
+      AND payment_id = ${paymentId}::uuid
     RETURNING id
   `;
   return rows.map((row) => row.id);

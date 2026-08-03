@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 
 import { DATABASE, type DatabaseHandle } from '../../database/database.module';
+import { PaymentNotificationPort } from '../shared/action-tool.port';
 import { NotificationController } from './notification.controller';
+import { NotificationPaymentAdapter } from './notification-payment.adapter';
 import {
   InMemoryNotificationRepository,
   NotificationRepository,
@@ -20,8 +22,12 @@ import { PostgresNotificationRepository } from './postgres-notification.reposito
           : // ponytail: e2e without DATABASE_URL stays in-memory.
             new InMemoryNotificationRepository(),
     },
+    {
+      provide: PaymentNotificationPort,
+      useClass: NotificationPaymentAdapter,
+    },
   ],
-  exports: [NotificationRepository],
+  exports: [NotificationRepository, PaymentNotificationPort],
 })
 // NestJS discovers module metadata from this decorated class.
 export class NotificationModule {}

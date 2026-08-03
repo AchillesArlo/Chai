@@ -14,6 +14,7 @@ import {
   ingestInboundEvent,
   markInboxEventProcessed,
   recordInboxEvent,
+  recordInboxPayload,
   resolveConversation,
   resumeAiConversation,
   settleOperation,
@@ -92,6 +93,16 @@ export class PostgresConversationRepository extends ConversationRepository {
         if (recorded.duplicate) {
           return { conversationId: null, created: false, duplicate: true };
         }
+
+        // Persist the raw event so a worker can rebuild it later (T-06/FASE 29).
+        // recordInboxPayload redacts card/CVV/PIN/OTP/bank fields BEFORE the
+        // INSERT, in this same transaction, so it commits atomically with the
+        // inbox row and never stores customer secrets in plaintext.
+        await recordInboxPayload(tx, {
+          event,
+          inboxEventId: recorded.id,
+          tenantId: event.tenantId,
+        });
 
         const result = await ingestInboundEvent(tx, {
           channelAccount: event.channelAccount,

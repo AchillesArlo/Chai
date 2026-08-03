@@ -16,6 +16,8 @@ const OWNER_CONSOLE_CONFIG: MiddlewareRouteConfig = {
   protectedPrefixes: [
     '/audit',
     '/automation',
+    '/billing',
+    '/channel-health',
     '/logistics',
     '/marketplace',
     '/reliability',

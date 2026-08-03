@@ -42,9 +42,9 @@ describe('API Postgres widget repository (Fase 5.5)', () => {
       widgetType: 'chat',
     });
 
-    // createSession mirrors the public widget runtime, which supplies
-    // tenantId directly (resolved client-side from the embed script), unlike
-    // list/get/update which have no tenant context at all.
+    // createSession discovers its tenant from widgetId (migration 0070's
+    // SECURITY DEFINER lookup) rather than trusting a caller-supplied
+    // tenantId, exactly like list/get/update.
     const session = await writer.createSession({
       contactId: null,
       conversationId: null,
@@ -54,11 +54,11 @@ describe('API Postgres widget repository (Fase 5.5)', () => {
       referrerUrl: 'https://google.com',
       startedAt: new Date().toISOString(),
       status: 'active',
-      tenantId: API_TENANT_ID,
       userAgent: 'vitest',
       visitorId: 'visitor-abc',
       widgetId: widget.id,
     });
+    expect(session.tenantId).toBe(API_TENANT_ID);
 
     // Round-trip through a brand-new repository instance — proves the data
     // lives in Postgres, not in the writer's process memory.
@@ -116,5 +116,70 @@ describe('API Postgres widget repository (Fase 5.5)', () => {
 
     expect(await repo.getSession('00000000-0000-0000-0000-000000000000')).toBeNull();
     expect(await repo.listSessions(widget.id)).toEqual([]);
+  });
+
+  it('ties a session to the widget owning tenant, never a caller-named one (REQ-09-014)', async () => {
+    const repo = new PostgresWidgetRepository(runtime);
+    const widgetA = await repo.createWidget(API_TENANT_ID, {
+      allowedOrigins: ['https://a.example.com'],
+      analyticsEnabled: true,
+      businessHours: null,
+      domain: 'a.example.com',
+      embedCode: null,
+      greetingMessage: null,
+      language: 'id',
+      name: 'tenant-a-widget',
+      offlineMessage: null,
+      position: 'bottom-right',
+      status: 'active',
+      theme: {},
+      widgetType: 'chat',
+    });
+
+    // createSession's contract has no tenantId parameter at all: there is no
+    // field through which a caller could even attempt to name tenant B. The
+    // session must land on tenant A -- the widget's real owner -- regardless
+    // of what the anonymous widget runtime caller believes or claims.
+    const session = await repo.createSession({
+      contactId: null,
+      conversationId: null,
+      ipAddress: '203.0.113.9',
+      landingPage: null,
+      metadata: {},
+      referrerUrl: null,
+      startedAt: new Date().toISOString(),
+      status: 'active',
+      userAgent: 'vitest',
+      visitorId: 'visitor-cross-tenant',
+      widgetId: widgetA.id,
+    });
+    expect(session.tenantId).toBe(API_TENANT_ID);
+
+    // Tenant B's own connection (still RLS-scoped) can never see the row: the
+    // session was never attributed to it in the first place.
+    const crossTenantSessions = await repo.listSessions(widgetA.id);
+    expect(crossTenantSessions.some((row) => row.id === session.id)).toBe(true);
+    const fetchedFromA = await repo.getSession(session.id);
+    expect(fetchedFromA?.tenantId).toBe(API_TENANT_ID);
+    expect(fetchedFromA?.tenantId).not.toBe(API_TENANT_B_ID);
+  });
+
+  it('refuses to create a session for a widget that does not exist', async () => {
+    const repo = new PostgresWidgetRepository(runtime);
+    await expect(
+      repo.createSession({
+        contactId: null,
+        conversationId: null,
+        ipAddress: null,
+        landingPage: null,
+        metadata: {},
+        referrerUrl: null,
+        startedAt: new Date().toISOString(),
+        status: 'active',
+        userAgent: null,
+        visitorId: null,
+        widgetId: '00000000-0000-0000-0000-000000000000',
+      }),
+    ).rejects.toThrow('Widget not found');
   });
 });

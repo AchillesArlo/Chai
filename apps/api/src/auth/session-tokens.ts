@@ -5,7 +5,7 @@ import {
   type TokenConfig,
 } from '@chai/auth';
 
-import { REFRESH_TOKEN_STORE } from './refresh-token-store';
+import type { RefreshTokenStore } from './refresh-token-store';
 
 export interface LoginResponseBody {
   accessToken: string;
@@ -48,15 +48,26 @@ function extractJti(refreshToken: string): string {
  * Mints access + refresh tokens for a principal and records the refresh jti so
  * logout/refresh-rotation can revoke it. Shared by the login controller and the
  * MFA step-up endpoint so both mint sessions identically.
+ *
+ * `existingFamilyId` is set only when this call rotates a still-valid refresh
+ * token (see performRefresh in login.controller.ts): the new token joins that
+ * same family so a later reuse of any earlier token in the chain revokes this
+ * one too. Omitted for a fresh login (and for the MFA step-up upgrade, which
+ * mints an independent session): the new token starts its own family, keyed by
+ * its own jti.
  */
 export async function issueSessionResponse(
   principal: Principal,
   tokenConfig: TokenConfig,
+  store: RefreshTokenStore,
+  existingFamilyId?: string,
 ): Promise<LoginResponseBody> {
   const tokens = await issueTokens({ config: tokenConfig, principal });
-  REFRESH_TOKEN_STORE.record({
+  const jti = extractJti(tokens.refreshToken);
+  await store.record({
     expiresAt: tokens.refreshTokenExpiresAt,
-    jti: extractJti(tokens.refreshToken),
+    familyId: existingFamilyId ?? jti,
+    jti,
     principalId: principal.id,
     revoked: false,
   });
@@ -68,3 +79,5 @@ export async function issueSessionResponse(
     tokenType: 'Bearer',
   };
 }
+
+export { extractJti };

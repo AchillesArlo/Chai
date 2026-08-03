@@ -133,6 +133,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/node_modules/**',
       'scripts/**', // ponytail: pilot .mjs use node globals; lint app packages only
+      '**/scripts/**', // ponytail: same as above, applies to per-package scripts/ dirs too
     ],
   },
   eslint.configs.recommended,

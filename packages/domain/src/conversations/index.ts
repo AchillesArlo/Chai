@@ -12,6 +12,16 @@ import { commitBusinessMutation } from '../outbox/producer';
  */
 export const SERVICE_ACTOR_ID = '00000000-0000-4000-8000-000000000001';
 
+/**
+ * Platform worker service principal. Distinct from {@link SERVICE_ACTOR_ID} (a
+ * v4 UUID) because principal ids are validated as UUIDv7 by ActorIdSchema /
+ * withTenantTransaction. This is the exact literal chai.active_tenant_roster()
+ * (migration 0050) hands every worker, so a worker that writes OUTSIDE the
+ * roster loop — e.g. the message.received fact consumer — assumes the same
+ * sanctioned identity instead of inventing its own.
+ */
+export const WORKER_SERVICE_PRINCIPAL_ID = '00000000-0000-7000-8000-000000000001';
+
 export interface InboundEventInput {
   /** Actor recorded in the audit trail; defaults to the platform service identity. */
   actorId?: string;

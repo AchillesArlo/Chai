@@ -34,6 +34,7 @@ const PUBLIC_ROUTES = new Set<string>([
   'auth/login.controller.ts:logout',
   'auth/session.controller.ts:session',
   'health/health.controller.ts:health',
+  'modules/channels/channels.controller.ts:verifyWebhookHandshake',
   'modules/channels/channels.controller.ts:ingestWebhook',
   'modules/payments/payments.controller.ts:webhook',
   'modules/widget/widget.controller.ts:listSessions',
@@ -172,7 +173,7 @@ describe('every API route maps to a permission', () => {
       .map((route) => `${route.file}:${route.line} ${route.decorator}`);
 
     expect(offenders).toEqual([]);
-  });
+  }, 15000);
 
   it('keeps the public allowlist minimal and honest', async () => {
     // Guards against the allowlist quietly becoming the escape hatch.

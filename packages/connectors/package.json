@@ -18,6 +18,8 @@
     "./jne": "./src/connectors/jne/index.ts",
     "./whatsapp-meta-sandbox": "./src/connectors/whatsapp-meta-sandbox/index.ts",
     "./whatsapp-meta": "./src/connectors/whatsapp-meta/index.ts",
+    "./community-whatsapp": "./src/connectors/community-whatsapp/index.ts",
+    "./webhook-verification": "./src/webhook-verification.ts",
     "./conformance": "./src/conformance/index.ts"
   },
   "scripts": {

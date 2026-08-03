@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   HttpCode,
+  Inject,
   NotFoundException,
   Post,
   Req,
@@ -34,7 +35,10 @@ function tenantScope(request: FastifyRequest): string {
 @Controller('api/client/v1')
 @RequireAudience('client-portal')
 export class AutomationController {
-  constructor(private readonly automation: AutomationService) {}
+  constructor(
+    @Inject(AutomationService)
+    private readonly automation: AutomationService,
+  ) {}
 
   @Post('automation/follow-ups')
   @RequirePermission('automation.manage')

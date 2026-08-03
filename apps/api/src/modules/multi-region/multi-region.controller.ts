@@ -1,14 +1,134 @@
 import { TenantId } from '../../common/tenant-id.decorator';
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Inject, Param, Query, UseGuards } from '@nestjs/common';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString } from 'class-validator';
 import { MultiRegionRepository } from './multi-region.repository';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { RequirePermission } from '../../guards/require-permission.decorator';
 import type { TenantRegion, RegionRoutingRule, RegionReplicationStatus, DataResidencyAudit } from './multi-region.repository';
 
+class CreateTenantRegionDto {
+  @IsString()
+  region!: string;
+
+  @IsBoolean()
+  isPrimary!: boolean;
+
+  @IsString()
+  dataResidencyPolicy!: string;
+}
+
+class UpdateTenantRegionDto {
+  @IsOptional()
+  @IsString()
+  region?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isPrimary?: boolean;
+
+  @IsOptional()
+  @IsString()
+  dataResidencyPolicy?: string;
+}
+
+class CreateRoutingRuleDto {
+  @IsString()
+  sourceRegion!: string;
+
+  @IsString()
+  targetRegion!: string;
+
+  @IsIn(['latency', 'cost', 'compliance', 'manual'])
+  routingType!: 'latency' | 'cost' | 'compliance' | 'manual';
+
+  @IsInt()
+  priority!: number;
+
+  @IsBoolean()
+  isActive!: boolean;
+}
+
+class UpdateRoutingRuleDto {
+  @IsOptional()
+  @IsString()
+  sourceRegion?: string;
+
+  @IsOptional()
+  @IsString()
+  targetRegion?: string;
+
+  @IsOptional()
+  @IsIn(['latency', 'cost', 'compliance', 'manual'])
+  routingType?: 'latency' | 'cost' | 'compliance' | 'manual';
+
+  @IsOptional()
+  @IsInt()
+  priority?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+class UpsertReplicationStatusDto {
+  @IsString()
+  sourceRegion!: string;
+
+  @IsString()
+  targetRegion!: string;
+
+  @IsString()
+  entityType!: string;
+
+  @IsString()
+  entityId!: string;
+
+  @IsOptional()
+  @IsString()
+  lastReplicatedAt!: string | null;
+
+  @IsOptional()
+  @IsInt()
+  replicationLagMs!: number | null;
+
+  @IsIn(['synced', 'lagging', 'failed', 'pending'])
+  status!: 'synced' | 'lagging' | 'failed' | 'pending';
+}
+
+class CreateResidencyAuditDto {
+  @IsString()
+  region!: string;
+
+  @IsString()
+  entityType!: string;
+
+  @IsString()
+  entityId!: string;
+
+  @IsIn(['create', 'read', 'update', 'delete', 'replicate', 'migrate'])
+  action!: 'create' | 'read' | 'update' | 'delete' | 'replicate' | 'migrate';
+
+  @IsBoolean()
+  complianceCheckPassed!: boolean;
+
+  @IsOptional()
+  @IsString()
+  violationReason!: string | null;
+
+  @IsString()
+  performedBy!: string;
+
+  @IsString()
+  performedAt!: string;
+}
+
 @Controller('api/owner/v1/multi-region')
 @UseGuards(TenantGuard)
 export class MultiRegionController {
-  constructor(private readonly repo: MultiRegionRepository) {}
+  constructor(
+    @Inject(MultiRegionRepository)
+    private readonly repo: MultiRegionRepository,
+  ) {}
 
   // Tenant Region endpoints
   @Get('regions')
@@ -30,9 +150,9 @@ export class MultiRegionController {
   @RequirePermission('platform.tenant.manage')
   async createTenantRegion(
     @TenantId() tenantId: string,
-    @Body() region: Omit<TenantRegion, 'id' | 'createdAt' | 'updatedAt'>,
+    @Body() region: CreateTenantRegionDto,
   ): Promise<TenantRegion> {
-    return this.repo.createTenantRegion(tenantId, region);
+    return this.repo.createTenantRegion(tenantId, { ...region, tenantId });
   }
 
   @Put('regions/:id')
@@ -40,7 +160,7 @@ export class MultiRegionController {
   async updateTenantRegion(
     @TenantId() tenantId: string,
     @Param('id') id: string,
-    @Body() update: Partial<TenantRegion>,
+    @Body() update: UpdateTenantRegionDto,
   ): Promise<TenantRegion> {
     return this.repo.updateTenantRegion(tenantId, id, update);
   }
@@ -65,9 +185,9 @@ export class MultiRegionController {
   @RequirePermission('platform.tenant.manage')
   async createRoutingRule(
     @TenantId() tenantId: string,
-    @Body() rule: Omit<RegionRoutingRule, 'id' | 'createdAt' | 'updatedAt'>,
+    @Body() rule: CreateRoutingRuleDto,
   ): Promise<RegionRoutingRule> {
-    return this.repo.createRoutingRule(tenantId, rule);
+    return this.repo.createRoutingRule(tenantId, { ...rule, tenantId });
   }
 
   @Put('routing-rules/:id')
@@ -75,7 +195,7 @@ export class MultiRegionController {
   async updateRoutingRule(
     @TenantId() tenantId: string,
     @Param('id') id: string,
-    @Body() update: Partial<RegionRoutingRule>,
+    @Body() update: UpdateRoutingRuleDto,
   ): Promise<RegionRoutingRule> {
     return this.repo.updateRoutingRule(tenantId, id, update);
   }
@@ -104,9 +224,9 @@ export class MultiRegionController {
   @RequirePermission('platform.tenant.manage')
   async upsertReplicationStatus(
     @TenantId() tenantId: string,
-    @Body() status: Omit<RegionReplicationStatus, 'id' | 'createdAt' | 'updatedAt'>,
+    @Body() status: UpsertReplicationStatusDto,
   ): Promise<RegionReplicationStatus> {
-    return this.repo.upsertReplicationStatus(tenantId, status);
+    return this.repo.upsertReplicationStatus(tenantId, { ...status, tenantId });
   }
 
   // Data Residency Audit endpoints
@@ -124,8 +244,8 @@ export class MultiRegionController {
   @RequirePermission('platform.tenant.manage')
   async createResidencyAudit(
     @TenantId() tenantId: string,
-    @Body() audit: Omit<DataResidencyAudit, 'id'>,
+    @Body() audit: CreateResidencyAuditDto,
   ): Promise<DataResidencyAudit> {
-    return this.repo.createResidencyAudit(tenantId, audit);
+    return this.repo.createResidencyAudit(tenantId, { ...audit, tenantId });
   }
 }

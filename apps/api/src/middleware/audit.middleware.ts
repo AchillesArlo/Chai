@@ -87,7 +87,9 @@ export class AuditMiddleware implements NestInterceptor {
       return next.handle();
     }
 
-    if (SKIP_AUDIT_PATHS.has(request.url)) {
+    const pathWithoutQuery = request.url.split('?')[0] ?? request.url;
+
+    if (this.shouldSkip(pathWithoutQuery)) {
       return next.handle();
     }
 
@@ -98,9 +100,17 @@ export class AuditMiddleware implements NestInterceptor {
       return next.handle();
     }
 
-    const resourceType = extractResourceType(request.url);
-    const resourceId = extractResourceId(request.url);
+    const resourceType = extractResourceType(pathWithoutQuery);
+    const resourceId = extractResourceId(pathWithoutQuery);
     const action = `${resourceType}.${method.toLowerCase()}`;
+
+    const isCrossTenant =
+      principal.kind === 'USER' &&
+      principal.audience === 'owner-console' &&
+      Boolean(principal.ownerTenantScope?.tenantId) &&
+      principal.ownerTenantScope?.tenantId === tenantContext.tenantId;
+
+    const crossTenantReason = isCrossTenant ? principal.ownerTenantScope?.reason : undefined;
 
     const auditEntry = {
       id: randomUUID(),
@@ -111,14 +121,15 @@ export class AuditMiddleware implements NestInterceptor {
       resourceId,
       metadata: {
         httpMethod: method,
-        path: request.url,
+        path: pathWithoutQuery,
         // Redacted, never raw: this metadata is PERSISTED to the audit table,
         // so an un-redacted body would store passwords, tokens, and customer
         // PII permanently in an append-only table nobody can scrub.
         body: redactBody(request.body),
+        ...(isCrossTenant ? { isCrossTenant: true, crossTenantReason } : {}),
       },
       ipAddress: request.ip,
-      userAgent: request.headers['user-agent'],
+      userAgent: typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : undefined,
     };
 
     return next.handle().pipe(
@@ -139,4 +150,15 @@ export class AuditMiddleware implements NestInterceptor {
       }),
     );
   }
+
+  private shouldSkip(path: string): boolean {
+    if (SKIP_AUDIT_PATHS.has(path)) {
+      return true;
+    }
+    if (path.startsWith('/auth/') || path.startsWith('/api/client/v1/auth/')) {
+      return true;
+    }
+    return false;
+  }
 }
+

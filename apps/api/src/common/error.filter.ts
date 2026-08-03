@@ -57,15 +57,18 @@ export class ApiErrorFilter implements ExceptionFilter {
 
     this.logFailure(exception, request, status);
 
-    void reply.status(status).send({
-      error: {
-        code: body.code ?? STATUS_CODES[status] ?? 'INTERNAL_ERROR',
-        correlationId: request.correlationId,
-        message: safeMessage(status, body),
-        retryable:
-          status === HttpStatus.TOO_MANY_REQUESTS || status >= HttpStatus.BAD_GATEWAY,
-      },
-    });
+    void reply
+      .status(status)
+      .header('content-type', 'application/problem+json; charset=utf-8')
+      .send({
+        error: {
+          code: body.code ?? STATUS_CODES[status] ?? 'INTERNAL_ERROR',
+          correlationId: request.correlationId,
+          message: safeMessage(status, body),
+          retryable:
+            status === HttpStatus.TOO_MANY_REQUESTS || status >= HttpStatus.BAD_GATEWAY,
+        },
+      });
   }
 
   /**

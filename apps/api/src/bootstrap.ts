@@ -16,6 +16,7 @@ import { registerLocalIdentityHook } from './auth/local-identity';
 import { loadTokenConfig } from './auth/token-config';
 import { registerTokenHook } from './auth/token-hook';
 import { registerCorrelationHook } from './common/correlation';
+import { registerWebhookBodyLimitHook } from './common/webhook-body-limit.hook';
 import type { ApplicationOptions } from './config';
 
 /**
@@ -69,6 +70,7 @@ export async function createApplication(
   // Registered right after the correlation id so every request, including one
   // rejected by a guard, is covered by a span.
   registerTracingHook(fastify);
+  registerWebhookBodyLimitHook(fastify);
   registerTokenHook(fastify, {
     tokenConfig: loadTokenConfig(),
     allowTestSubject: options.environment !== 'production',

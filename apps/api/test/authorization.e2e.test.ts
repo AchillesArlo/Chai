@@ -29,6 +29,47 @@ describe('per-permission authorization is enforced', () => {
 
   afterAll(async () => app.close());
 
+  /**
+   * FASE 6 — checkout resolves its amount from a real invoice, not a
+   * client-supplied number. This authorization suite only cares whether the
+   * request reaches the handler, so it seeds the smallest possible reference.
+   */
+  async function createInvoice(): Promise<string> {
+    const unique = Math.random().toString(36).slice(2, 10);
+    const catalog = await app.inject({
+      headers: {
+        'idempotency-key': `authz-catalog-${unique}`,
+        'x-test-subject': 'local|client-owner',
+      },
+      method: 'POST',
+      payload: { currency: 'IDR', name: 'Authz test item', sku: `authz-${unique}`, unitPriceCents: 10_000 },
+      url: '/api/client/v1/orders/catalog',
+    });
+    const serviceItemId = (catalog.json().data as { id: string }).id;
+
+    const order = await app.inject({
+      headers: {
+        'idempotency-key': `authz-order-${unique}`,
+        'x-test-subject': 'local|client-owner',
+      },
+      method: 'POST',
+      payload: { items: [{ quantity: 1, serviceItemId }] },
+      url: '/api/client/v1/orders',
+    });
+    const orderId = (order.json().data as { id: string }).id;
+
+    const invoice = await app.inject({
+      headers: {
+        'idempotency-key': `authz-invoice-${unique}`,
+        'x-test-subject': 'local|client-owner',
+      },
+      method: 'POST',
+      payload: {},
+      url: `/api/client/v1/orders/${orderId}/invoices`,
+    });
+    return (invoice.json().data as { id: string }).id;
+  }
+
   it('lets a role holding payment.read poll a session but not create one', async () => {
     const created = await app.inject({
       headers: {
@@ -36,7 +77,7 @@ describe('per-permission authorization is enforced', () => {
         'x-test-subject': 'local|client-viewer',
       },
       method: 'POST',
-      payload: { amount: 10_000, currency: 'IDR', idempotencyKey: 'authz-1' },
+      payload: { idempotencyKey: 'authz-1', invoiceId: 'irrelevant-because-permission-denied-first' },
       url: '/api/client/v1/payments/checkout',
     });
 
@@ -45,13 +86,14 @@ describe('per-permission authorization is enforced', () => {
   });
 
   it('allows checkout for a role holding payment.manage', async () => {
+    const invoiceId = await createInvoice();
     const created = await app.inject({
       headers: {
         'idempotency-key': 'authz-owner-1',
         'x-test-subject': 'local|client-owner',
       },
       method: 'POST',
-      payload: { amount: 10_000, currency: 'IDR', idempotencyKey: 'authz-2' },
+      payload: { idempotencyKey: 'authz-2', invoiceId },
       url: '/api/client/v1/payments/checkout',
     });
 

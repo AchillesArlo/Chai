@@ -35,6 +35,18 @@ export interface BookingFact {
   status: 'CONFIRMED' | 'CANCELLED' | 'COMPLETED' | 'NO_SHOW';
 }
 
+/**
+ * One row of chai.message_fact (FASE 32), read back for a metric. Deliberately
+ * carries no message body — only the dimensions a KPI needs. Populated from the
+ * `message.received` event by the FASE 30 consumer, never by scanning
+ * chai.message, so analytics and operational load stay separated.
+ */
+export interface MessageFact {
+  aiHandled: boolean;
+  conversationCreated: boolean;
+  occurredAt: Date;
+}
+
 function blend(ai: number, human: number): SourceMix {
   if (ai > 0 && human === 0) return 'BOT';
   if (human > 0 && ai === 0) return 'HUMAN';
@@ -103,5 +115,39 @@ export function bookingExceptionRate(bookings: BookingFact[], sourceUntil: Date)
     freshness: { evaluatedAt: new Date(), sourceUntil },
     mix: 'BLENDED',
     value: total === 0 ? 0 : exceptions / total,
+  };
+}
+
+/**
+ * Inbound message volume over the window. `value` is the count and `denominator`
+ * is that same count, keeping the MetricLineage contract honest: the number IS
+ * its own evidence. `mix` reflects how many arrived while the AI held the
+ * conversation vs a human, so a dashboard can disclose provenance.
+ */
+export function inboundMessageVolume(facts: MessageFact[], sourceUntil: Date): MetricLineage {
+  const total = facts.length;
+  const aiHandled = facts.filter((fact) => fact.aiHandled).length;
+  return {
+    denominator: total,
+    freshness: { evaluatedAt: new Date(), sourceUntil },
+    mix: blend(aiHandled, total - aiHandled),
+    value: total,
+  };
+}
+
+/**
+ * Share of inbound messages that opened a NEW conversation (vs continued an
+ * existing one) — a proxy for fresh demand. Denominator is total inbound
+ * messages, so the ratio's basis is visible.
+ */
+export function newConversationRate(facts: MessageFact[], sourceUntil: Date): MetricLineage {
+  const total = facts.length;
+  const created = facts.filter((fact) => fact.conversationCreated).length;
+  const aiHandled = facts.filter((fact) => fact.aiHandled).length;
+  return {
+    denominator: total,
+    freshness: { evaluatedAt: new Date(), sourceUntil },
+    mix: blend(aiHandled, total - aiHandled),
+    value: total === 0 ? 0 : created / total,
   };
 }

@@ -1,14 +1,225 @@
 import { TenantId } from '../../common/tenant-id.decorator';
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Inject, Param, Query, UseGuards } from '@nestjs/common';
+import { IsArray, IsBoolean, IsIn, IsNumber, IsObject, IsOptional, IsString } from 'class-validator';
 import { AdvancedAnalyticsRepository } from './advanced-analytics.repository';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { RequirePermission } from '../../guards/require-permission.decorator';
 import type { AnalyticsDashboard, AnalyticsReport, ReportExecution, PredictiveModel, PredictionResult, CohortDefinition } from './advanced-analytics.repository';
 
+class CreateDashboardDto {
+  @IsString()
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsArray()
+  layout!: unknown[];
+
+  @IsBoolean()
+  isDefault!: boolean;
+}
+
+class UpdateDashboardDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsOptional()
+  @IsArray()
+  layout?: unknown[];
+
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
+}
+
+class CreateReportDto {
+  @IsString()
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsObject()
+  queryConfig!: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  scheduleCron?: string | null;
+}
+
+class UpdateReportDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  queryConfig?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  scheduleCron?: string | null;
+}
+
+class CreateReportExecutionDto {
+  @IsString()
+  reportId!: string;
+
+  @IsIn(['running', 'completed', 'failed'])
+  status!: 'running' | 'completed' | 'failed';
+
+  @IsOptional()
+  @IsObject()
+  resultSummary?: Record<string, unknown> | null;
+
+  @IsString()
+  startedAt!: string;
+
+  @IsOptional()
+  @IsString()
+  completedAt?: string | null;
+}
+
+class UpdateReportExecutionDto {
+  @IsOptional()
+  @IsString()
+  reportId?: string;
+
+  @IsOptional()
+  @IsIn(['running', 'completed', 'failed'])
+  status?: 'running' | 'completed' | 'failed';
+
+  @IsOptional()
+  @IsObject()
+  resultSummary?: Record<string, unknown> | null;
+
+  @IsOptional()
+  @IsString()
+  startedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  completedAt?: string | null;
+}
+
+class CreateModelDto {
+  @IsIn(['churn_prediction', 'revenue_forecast', 'engagement_score'])
+  modelType!: 'churn_prediction' | 'revenue_forecast' | 'engagement_score';
+
+  @IsString()
+  name!: string;
+
+  @IsString()
+  version!: string;
+
+  @IsOptional()
+  @IsNumber()
+  accuracy?: number | null;
+
+  @IsOptional()
+  @IsString()
+  trainedAt?: string | null;
+
+  @IsObject()
+  modelConfig!: Record<string, unknown>;
+
+  @IsBoolean()
+  isActive!: boolean;
+}
+
+class UpdateModelDto {
+  @IsOptional()
+  @IsIn(['churn_prediction', 'revenue_forecast', 'engagement_score'])
+  modelType?: 'churn_prediction' | 'revenue_forecast' | 'engagement_score';
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  version?: string;
+
+  @IsOptional()
+  @IsNumber()
+  accuracy?: number | null;
+
+  @IsOptional()
+  @IsString()
+  trainedAt?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  modelConfig?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+class CreatePredictionDto {
+  @IsString()
+  modelId!: string;
+
+  @IsString()
+  entityType!: string;
+
+  @IsString()
+  entityId!: string;
+
+  @IsObject()
+  predictionValue!: Record<string, unknown>;
+
+  @IsOptional()
+  @IsNumber()
+  confidence?: number | null;
+}
+
+class CreateCohortDto {
+  @IsString()
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsObject()
+  criteria!: Record<string, unknown>;
+}
+
+class UpdateCohortDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  criteria?: Record<string, unknown>;
+}
+
 @Controller('api/client/v1/advanced-analytics')
 @UseGuards(TenantGuard)
 export class AdvancedAnalyticsController {
-  constructor(private readonly repo: AdvancedAnalyticsRepository) {}
+  constructor(
+    @Inject(AdvancedAnalyticsRepository)
+    private readonly repo: AdvancedAnalyticsRepository,
+  ) {}
 
   // Dashboard endpoints
   @Get('dashboards')
@@ -30,9 +241,9 @@ export class AdvancedAnalyticsController {
   @RequirePermission('analytics.export')
   async createDashboard(
     @TenantId() tenantId: string,
-    @Body() dashboard: Omit<AnalyticsDashboard, 'id' | 'createdAt' | 'updatedAt'>,
+    @Body() dashboard: CreateDashboardDto,
   ): Promise<AnalyticsDashboard> {
-    return this.repo.createDashboard(tenantId, dashboard);
+    return this.repo.createDashboard(tenantId, dashboard as Omit<AnalyticsDashboard, 'id' | 'createdAt' | 'updatedAt'>);
   }
 
   @Put('dashboards/:id')
@@ -40,7 +251,7 @@ export class AdvancedAnalyticsController {
   async updateDashboard(
     @TenantId() tenantId: string,
     @Param('id') id: string,
-    @Body() update: Partial<AnalyticsDashboard>,
+    @Body() update: UpdateDashboardDto,
   ): Promise<AnalyticsDashboard> {
     return this.repo.updateDashboard(tenantId, id, update);
   }
@@ -74,9 +285,9 @@ export class AdvancedAnalyticsController {
   @RequirePermission('analytics.export')
   async createReport(
     @TenantId() tenantId: string,
-    @Body() report: Omit<AnalyticsReport, 'id' | 'createdAt' | 'updatedAt' | 'lastRunAt'>,
+    @Body() report: CreateReportDto,
   ): Promise<AnalyticsReport> {
-    return this.repo.createReport(tenantId, report);
+    return this.repo.createReport(tenantId, report as Omit<AnalyticsReport, 'id' | 'createdAt' | 'updatedAt' | 'lastRunAt'>);
   }
 
   @Put('reports/:id')
@@ -84,7 +295,7 @@ export class AdvancedAnalyticsController {
   async updateReport(
     @TenantId() tenantId: string,
     @Param('id') id: string,
-    @Body() update: Partial<AnalyticsReport>,
+    @Body() update: UpdateReportDto,
   ): Promise<AnalyticsReport> {
     return this.repo.updateReport(tenantId, id, update);
   }
@@ -112,9 +323,9 @@ export class AdvancedAnalyticsController {
   @RequirePermission('analytics.export')
   async createReportExecution(
     @TenantId() tenantId: string,
-    @Body() execution: Omit<ReportExecution, 'id' | 'createdAt' | 'durationMs'>,
+    @Body() execution: CreateReportExecutionDto,
   ): Promise<ReportExecution> {
-    return this.repo.createReportExecution(tenantId, execution);
+    return this.repo.createReportExecution(tenantId, execution as Omit<ReportExecution, 'id' | 'createdAt' | 'durationMs'>);
   }
 
   @Put('report-executions/:id')
@@ -122,7 +333,7 @@ export class AdvancedAnalyticsController {
   async updateReportExecution(
     @TenantId() tenantId: string,
     @Param('id') id: string,
-    @Body() update: Partial<ReportExecution>,
+    @Body() update: UpdateReportExecutionDto,
   ): Promise<ReportExecution> {
     return this.repo.updateReportExecution(tenantId, id, update);
   }
@@ -150,9 +361,9 @@ export class AdvancedAnalyticsController {
   @RequirePermission('analytics.export')
   async createModel(
     @TenantId() tenantId: string,
-    @Body() model: Omit<PredictiveModel, 'id' | 'createdAt' | 'updatedAt'>,
+    @Body() model: CreateModelDto,
   ): Promise<PredictiveModel> {
-    return this.repo.createModel(tenantId, model);
+    return this.repo.createModel(tenantId, model as Omit<PredictiveModel, 'id' | 'createdAt' | 'updatedAt'>);
   }
 
   @Put('models/:id')
@@ -160,7 +371,7 @@ export class AdvancedAnalyticsController {
   async updateModel(
     @TenantId() tenantId: string,
     @Param('id') id: string,
-    @Body() update: Partial<PredictiveModel>,
+    @Body() update: UpdateModelDto,
   ): Promise<PredictiveModel> {
     return this.repo.updateModel(tenantId, id, update);
   }
@@ -180,9 +391,9 @@ export class AdvancedAnalyticsController {
   @RequirePermission('analytics.export')
   async createPrediction(
     @TenantId() tenantId: string,
-    @Body() prediction: Omit<PredictionResult, 'id' | 'predictedAt'>,
+    @Body() prediction: CreatePredictionDto,
   ): Promise<PredictionResult> {
-    return this.repo.createPrediction(tenantId, prediction);
+    return this.repo.createPrediction(tenantId, prediction as Omit<PredictionResult, 'id' | 'predictedAt'>);
   }
 
   // Cohort endpoints
@@ -205,9 +416,9 @@ export class AdvancedAnalyticsController {
   @RequirePermission('analytics.export')
   async createCohort(
     @TenantId() tenantId: string,
-    @Body() cohort: Omit<CohortDefinition, 'id' | 'createdAt' | 'updatedAt' | 'memberCount'>,
+    @Body() cohort: CreateCohortDto,
   ): Promise<CohortDefinition> {
-    return this.repo.createCohort(tenantId, cohort);
+    return this.repo.createCohort(tenantId, cohort as Omit<CohortDefinition, 'id' | 'createdAt' | 'updatedAt' | 'memberCount'>);
   }
 
   @Put('cohorts/:id')
@@ -215,7 +426,7 @@ export class AdvancedAnalyticsController {
   async updateCohort(
     @TenantId() tenantId: string,
     @Param('id') id: string,
-    @Body() update: Partial<CohortDefinition>,
+    @Body() update: UpdateCohortDto,
   ): Promise<CohortDefinition> {
     return this.repo.updateCohort(tenantId, id, update);
   }

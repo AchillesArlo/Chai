@@ -22,12 +22,97 @@
 
 ## Ringkasan eksekutif (tiga kalimat)
 
-Dari **309 persyaratan normatif** yang diekstrak enam jalur, hanya **73 (24%) TERPENUHI** secara
-call-site-proven; **173 SEBAGIAN**, **44 HILANG**, **1 BERTENTANGAN**, **18 TIDAK-TERVERIFIKASI**.
+Dari **309 persyaratan normatif** yang diekstrak enam jalur, hasil audit awal (2026-07-29, sebelum
+sesi FASE 1 di bawah) mencatat **73 (24%) TERPENUHI** secara call-site-proven; **173 SEBAGIAN**,
+**44 HILANG**, **1 BERTENTANGAN**, **17 TIDAK-TERVERIFIKASI**.
+
+**Koreksi pasca-sesi FASE 26 (2026-08-01) — audit ulang + rekonsiliasi statistik**: sesi ini
+memverifikasi ulang setiap baris SEBAGIAN/HILANG terhadap kode nyata (bukan menaksir) dan
+mengoreksi status yang tertinggal setelah FASE 15–25 dan 27–33 selesai. **17 temuan berpindah ke
+TERPENUHI dengan bukti file+test**: 15 HILANG→TERPENUHI — REQ-07-012 (kontrak n8n), REQ-07-014
+(6 template + stop-reason enum), REQ-07-015 (booking saga+kompensasi), REQ-17-038 (PoD RLS
+write-once), REQ-17-069 (consent notification), REQ-17-065 (mismatch alert+owner+aging+runbook+audit),
+REQ-09-012 (Community Gateway), REQ-04-009 (komponen Actions), REQ-04-016 (9 komponen AI tanpa %),
+REQ-03-009/010/011/014/018 (owner console: wizard/detail/channel-health/billing/onboarding),
+REQ-02-016 (gateway zona terpisah); 2 SEBAGIAN→TERPENUHI — REQ-06-010 (consumer produksi ter-wire,
+FASE 30), REQ-02-019 (AuditMiddleware tiap mutasi, FASE 15). Sisa SEBAGIAN/HILANG yang tidak
+dikerjakan dicatat sebagai keputusan **ditunda sadar** di
+`docs/plans/2026-08-01-ditunda-sadar-fase26.md`, dan rencana migrasi OIDC (REQ-10-015, menyentuh
+autentikasi — tidak diimplementasi sesi ini) ada di `docs/adr/ADR-0031-oidc-workload-identity.md`.
+
+**Angka otoritatif (dihitung dengan perintah `Select-String` §2, 2026-08-01, setelah penyelesaian item tertunda)**: **73 TERPENUHI**,
+**149 SEBAGIAN**, **16 HILANG**, **6 TIDAK-TERVERIFIKASI** (dari 244 baris tabel §1). Tambahan penyelesaian:
+REQ-10-003 & REQ-10-004 (idle session timeout 30m/60m ditegakkan di `performRefresh` dan `token-hook`), REQ-17-071 (multi-package & partial fulfillment di `@chai/domain`) berpindah ke TERPENUHI.
+
+**Koreksi pasca-sesi FASE 11 (2026-07-31)**: 4 temuan berpindah ke TERPENUHI — REQ-03-035 (BERTENTANGAN→TERPENUHI, modal konfirmasi aksi destruktif), REQ-10-019 (HILANG→TERPENUHI, malware scan download gate + endpoint scan), REQ-08-018 (SEBAGIAN→TERPENUHI, evaluateGroundedAnswerPolicy di @chai/domain), REQ-05-002 (SEBAGIAN→TERPENUHI, ADR-0030 owner x-tenant-id header policy).
+
+**Koreksi pasca-sesi FASE 10 (2026-07-31)**: 4 temuan berpindah ke TERPENUHI — REQ-17-033,
+REQ-17-053, REQ-17-066 (SEBAGIAN→TERPENUHI), REQ-09-026 (TIDAK-TERVERIFIKASI→TERPENUHI).
+`GET /shipments/:trackingNumber` kini mewajibkan proof of ownership (`contactId` atau
+`orderReference` sebagai query param), ter-wire ke `customerLookup` (fail-closed, ADR-027);
+route-level e2e test membuktikan tracking number tebakan mengembalikan 404. Alasan tiap
+perpindahan ada di baris REQ masing-warning di §1.
+
+**Koreksi pasca-sesi FASE 1 (2026-07-29, sama hari)**: tiga temuan berpindah ke TERPENUHI dengan
+bukti eksekusi baru — `REQ-17-009` (SEBAGIAN→TERPENUHI), `REQ-09-014` (SEBAGIAN→TERPENUHI),
+`REQ-02-018` (TIDAK-TERVERIFIKASI→TERPENUHI). Satu temuan naik kelas tanpa mencapai TERPENUHI:
+`REQ-17-063` (HILANG→SEBAGIAN; bagian stop-reminder tertutup, bagian update-proyeksi masih menunggu
+`REQ-17-019`). Angka pasca-FASE-1: **76 (25%) TERPENUHI**, **172 SEBAGIAN**, **43 HILANG**,
+**1 BERTENTANGAN**, **17 TIDAK-TERVERIFIKASI**.
+
+**Koreksi pasca-sesi FASE 2 (2026-07-30)**: tiga temuan lagi berpindah ke TERPENUHI dengan bukti
+eksekusi baru — `REQ-10-013` (SEBAGIAN→TERPENUHI, refresh token dipindah ke Postgres + bug reuse-family
+nyata diperbaiki), `REQ-10-012` (HILANG→TERPENUHI, SameSite=Lax dikonfirmasi sudah cukup untuk mutasi
++ Origin check ditambah di BFF proxy), `REQ-10-005` (SEBAGIAN→TERPENUHI, 5 rute sensitif tambahan
+diberi guard, total 6). Angka pasca-FASE-2: **79 (26%) TERPENUHI**, **170 SEBAGIAN**, **42 HILANG**,
+**1 BERTENTANGAN**, **17 TIDAK-TERVERIFIKASI**.
+
+**Koreksi pasca-sesi FASE 3 (2026-07-30)**: tiga temuan lagi berpindah ke TERPENUHI — `REQ-10-016`,
+`REQ-09-006`, `REQ-09-023` (ketiganya SEBAGIAN→TERPENUHI: timestamp+replay-window+dedup ditambahkan
+untuk webhook mock-payment dan Midtrans; JNE sengaja tidak disambungkan ke endpoint publik, keputusan
+terdokumentasi di atas). Angka pasca-FASE-3: **82 (27%) TERPENUHI**, **167 SEBAGIAN**, **42 HILANG**,
+**1 BERTENTANGAN**, **17 TIDAK-TERVERIFIKASI**.
+
+**Koreksi pasca-sesi FASE 4 (2026-07-30)**: tiga temuan lagi berpindah ke TERPENUHI — `REQ-08-008`,
+`REQ-08-021`, `REQ-09-034` (ketiganya SEBAGIAN→TERPENUHI: jalur eksekusi tool AI/human dibangun dari
+nol — sebelumnya tidak ada sama sekali, bukan hanya "tidak tersambung" seperti klaim audit awal — dan
+policy gate + kontrak ActionRequest idempoten + kill switch kini nyata di `POST /actions/execute`).
+Angka terkini: **89 (29%) TERPENUHI**, **160 SEBAGIAN**, **42 HILANG**, **1 BERTENTANGAN**,
+**17 TIDAK-TERVERIFIKASI**. Detail tiap perpindahan ada di baris REQ masing-masing di §1 dan di
+Tier 0 §2 di bawah.
+
+**Pembaruan pasca-FASE-5 (2026-07-31)**: 4 dari 7 temuan HIGH satu tema "rahasia & kredensial"
+naik ke TERPENUHI — REQ-10-022, REQ-05-003, REQ-17-049, REQ-09-029 (SecretService AES-256-GCM
+at-rest, kolom DB hanya ref vault, rotasi teraudit via AuditPort). REQ-17-011 dan REQ-17-058
+tetap SEBAGIAN: tabel `payment_provider_account` per-tenant + repo + SecretService sudah ada
+(migrasi 0086), tetapi `verifyProviderWebhook` Midtrans masih pakai key global (tenantId hanya
+terbaca setelah verifikasi; pre-parse order_id menyusul). REQ-04-010 (frontend SecretInput)
+TERPENUHI: komponen `SecretInput` masked, hardcoded secret dihapus.
+
 Invarian inti proyek yang paling mahal **sebagian besar aman** (uang integer minor units, RLS
 default-deny+FORCE, `PAID` tak mundur, unknown→UNKNOWN, policy engine sebagai satu-satunya gerbang
-efek samping tool AI) — tetapi ada **tiga cacat CRITICAL pada jalur uang** (semua di Jalur C) dan
-**satu potensi cacat isolasi tenant** (Jalur D REQ-09-014) yang bersifat **release-blocking**.
+efek samping tool AI).
+
+**Koreksi 2026-07-29 (pasca-audit)**: dua dari empat temuan yang tabel ini semula menandai
+release-blocking sudah ditutup penuh dengan bukti eksekusi setelah dokumen ini ditulis; dua lainnya
+sebagian ditutup. `REQ-17-009` (mutasi+audit+event webhook payment dalam satu transaksi) —
+**TERPENUHI penuh**. `REQ-17-063` (PAY-06: update proyeksi **dan** stop-reminder tepat sekali) —
+**SEBAGIAN**: bagian stop-reminder ditutup (lihat commit "Tutup CRITICAL reminder pembayaran dan bug
+jsonb double-encode di follow_up_job"), bagian update-proyeksi masih menunggu `REQ-17-019` yang
+sama-sama masih terbuka. `REQ-09-014` (isolasi tenant widget publik) dan `REQ-02-018` (suite
+integrasi isolasi tenant yang sebelumnya yatim) — **TERPENUHI penuh**, ditutup pada sesi FASE 1
+rencana penyelesaian lengkap (lihat `docs/plans/2026-07-29-rencana-penyelesaian-lengkap.md`).
+Satu-satunya CRITICAL yang masih terbuka sepenuhnya adalah `REQ-17-019`, yang butuh keputusan model
+data sebelum diimplementasikan — lihat FASE 7 rencana tersebut.
+Sesi yang menjalankan `tests/security/**`/`tests/e2e/**` untuk pertama kali (menutup REQ-02-018)
+juga menyingkap **dua bug P0 baru, tidak terkait isolasi tenant**: (1) esbuild (dipakai build dan
+dev server `apps/api`) tidak mendukung `emitDecoratorMetadata`, sehingga `class-validator`'s
+`ValidationPipe` menjadi no-op di build produksi nyata (`node dist/main.js`) — validasi
+body/query API tidak berfungsi sama sekali; (2) constructor tanpa `@Inject()` eksplisit yang
+mengandalkan reflection implisit di-resolve `undefined` tanpa error boot — dikonfirmasi konkret di
+`channels.controller.ts` (`RealtimePublisher`), menyebabkan setiap webhook channel masuk crash 500.
+Keduanya belum ditutup; lihat rencana penyelesaian lengkap untuk penjadwalannya.
+
 Klaim kematangan warisan di §1 rencana **terlalu optimistis di setiap lapisan** bila diukur dengan
 bar ketat "terbukti terpenuhi"; kesenjangan terbesar ada di AI-safety (18% vs klaim 35%) dan
 frontend (2% vs klaim 25–30%).
@@ -45,69 +130,69 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 
 | ID | Jalur | Persyaratan (singkat) | Kelas | Severity |
 |---|---|---|---|---|
-| REQ-17-009 | C | Efek eksternal: mutasi+audit+event dalam SATU transaksi (jalur webhook payment tak patuh) | SEBAGIAN | CRITICAL |
+| REQ-17-009 | C | Efek eksternal: mutasi+audit+event dalam SATU transaksi (jalur webhook payment tak patuh) | TERPENUHI | CRITICAL |
 | REQ-17-019 | C | Alur hosted-payment lengkap: on-PAID update proyeksi+stop reminder+notifikasi+atribusi | SEBAGIAN | CRITICAL |
-| REQ-17-063 | C | PAY-06: event paid update proyeksi + stop reminder tepat sekali | HILANG | CRITICAL |
+| REQ-17-063 | C | PAY-06: event paid update proyeksi + stop reminder tepat sekali | SEBAGIAN | CRITICAL |
 
 ### 1.2 HIGH (37)
 
 | ID | Jalur | Persyaratan (singkat) | Kelas | Severity |
 |---|---|---|---|---|
-| REQ-10-005 | A | Recent-authentication window 10 menit untuk aksi sensitif (hanya 2 rute) | SEBAGIAN | HIGH |
-| REQ-10-012 | A | CSRF protection untuk mutasi cookie-auth | HILANG | HIGH |
-| REQ-10-013 | A | Refresh token rotate + reuse revokes family (store in-memory, gagal multi-replica) | SEBAGIAN | HIGH |
-| REQ-10-016 | A | Webhook signature + timestamp verification + replay window (timestamp absen) | SEBAGIAN | HIGH |
-| REQ-10-019 | A | Malware scan pada file/media unggah (scan_status tak pernah diisi) | HILANG | HIGH |
-| REQ-10-022 | A | Secret manager/KMS; connector secret nyatanya tak dienkripsi; tanpa rotasi | SEBAGIAN | HIGH |
-| REQ-05-002 | A | Body/header tak bisa memilih tenant (owner `x-tenant-id` — perlu ADR) | SEBAGIAN | HIGH |
-| REQ-05-003 | A | Raw secret tak disimpan di webhook_subscription/payment_provider_account (belum dibaca langsung) | SEBAGIAN | HIGH |
-| REQ-06-010 | B | Event kanonik benar-benar terkirim ke subscriber end-to-end (tak ada konsumen produksi) | SEBAGIAN | HIGH |
-| REQ-17-011 | C | Metadata akun provider + referensi secret-manager per-tenant | SEBAGIAN | HIGH |
+| REQ-10-005 | A | Recent-authentication window 10 menit untuk aksi sensitif (kini 6 rute, didaftarkan di `RECENT_AUTH_ROUTES`) | TERPENUHI | HIGH |
+| REQ-10-012 | A | CSRF protection untuk mutasi cookie-auth (SameSite=Lax + Origin check di BFF proxy) | TERPENUHI | HIGH |
+| REQ-10-013 | A | Refresh token rotate + reuse revokes family (Postgres migrasi 0083, multi-replica) | TERPENUHI | HIGH |
+| REQ-10-016 | A | Webhook signature + timestamp verification + replay window (timestamp+dedup ditambahkan; JNE sengaja belum ter-wire, lihat §7) | TERPENUHI | HIGH |
+| REQ-10-019 | A | Malware scan pada file/media unggah (GET :id/download memblokir non-CLEAN + POST :id/scan pipeline, REQ-10-019, FASE 11) | TERPENUHI | HIGH |
+| REQ-10-022 | A | Secret manager/KMS; connector secret dienkripsi AES-256-GCM at-rest via SecretService; kolom DB hanya ref vault; rotasi teraudit (FASE 5) | TERPENUHI | HIGH |
+| REQ-05-002 | A | Body/header tak bisa memilih tenant (ADR-0030 owner x-tenant-id header policy tertulis, FASE 11) | TERPENUHI | HIGH |
+| REQ-05-003 | A | Raw secret tak disimpan di webhook_subscription (signing_secret_ref via SecretService, migrasi 0086); payment_provider_account per-tenant dengan secret_ref (FASE 5) | TERPENUHI | HIGH |
+| REQ-06-010 | B | Event kanonik benar-benar terkirim ke subscriber end-to-end (FASE 30: workers/inbox-dispatcher/message-received-consumer.ts ter-wire di main.ts, consumer group nyata + message-received-consumer.integration.test.ts delivery+idempotensi) | TERPENUHI | HIGH |
+| REQ-17-011 | C | Metadata akun provider + referensi secret-manager per-tenant (tabel payment_provider_account, migrasi 0086; SecretService per-tenant, FASE 5) | SEBAGIAN | HIGH |
 | REQ-17-021 | C | Amount dari sumber tepercaya; AI tak mengarang harga/pajak/currency | SEBAGIAN | HIGH |
 | REQ-17-027 | C | Eksekusi refund: recent-auth + threshold + audit + rekonsiliasi provider | SEBAGIAN | HIGH |
-| REQ-17-033 | C | Lookup pelanggan verifikasi tenant+ownership (logika ada, tak tersambung ke rute) | SEBAGIAN | HIGH |
+| REQ-17-033 | C | Lookup pelanggan verifikasi tenant+ownership (kini ter-wire ke rute via customerLookup + query param proof; route-level e2e test, FASE 10) | TERPENUHI | HIGH |
 | REQ-17-044 | C | Event kanonik payment.*/shipment.* (mayoritas hilang) | SEBAGIAN | HIGH |
-| REQ-17-049 | C | Secret manager per-tenant/least-scope/rotasi/audited | SEBAGIAN | HIGH |
-| REQ-17-053 | C | Lookup tracking butuh user terautentikasi atau verifikasi identitas/order | SEBAGIAN | HIGH |
-| REQ-17-058 | C | PAY-01: isolasi kredensial/transaksi tenant — secret webhook global, bukan referensi secret-manager per-tenant (koreksi kelas jalur C) | SEBAGIAN | HIGH |
+| REQ-17-049 | C | Secret manager per-tenant/least-scope/rotasi teraudit (SecretService per-tenant, rotateSecret menulis audit_entry; FASE 5) | TERPENUHI | HIGH |
+| REQ-17-053 | C | Lookup tracking butuh user terautentikasi + verifikasi identitas/order (kini ter-wire ke rute, contactId/orderReference wajib; FASE 10) | TERPENUHI | HIGH |
+| REQ-17-058 | C | PAY-01: isolasi kredensial/transaksi tenant — payment_provider_account per-tenant dengan secret_ref (migrasi 0086, FASE 5); webhook verifyProviderWebhook masih pakai key global (pre-parse order_id menyusul) | SEBAGIAN | HIGH |
 | REQ-17-059 | C | PAY-02: amount/currency/purpose dari data bisnis tepercaya + konfirmasi | SEBAGIAN | HIGH |
 | REQ-17-064 | C | PAY-07: refund nonaktif s.d. approval+recent-auth+rekonsiliasi+tes provider | SEBAGIAN | HIGH |
-| REQ-17-065 | C | PAY-08: mismatch produksi punya alert+owner+aging+runbook+audit | HILANG | HIGH |
-| REQ-17-066 | C | LOG-01: tenant-isolated + lookup end-customer verifikasi ownership | SEBAGIAN | HIGH |
-| REQ-08-008 | D | AI tak dapat menimpa consent/permission/entitlement/approval/state (policy ada, runtime tak ter-wire) | SEBAGIAN | HIGH |
-| REQ-08-018 | D | Kebijakan grounded-answer klaim tenant-spesifik | SEBAGIAN | HIGH |
-| REQ-08-021 | D | Kontrak eksekusi tool 12-langkah + ActionRequest idempoten + audit | SEBAGIAN | HIGH |
+| REQ-17-065 | C | PAY-08: mismatch produksi punya alert+owner+aging+runbook+audit (FASE 33: payments/refund.ts payment_reconciliation dengan assignedOwnerId+agingDays, resolve via commitBusinessMutation (audit+event); alert PaymentReconciliationMismatch; runbook 2026-07-31-payment-reconciliation-runbook.md; advanced-payments.integration.test.ts) | TERPENUHI | HIGH |
+| REQ-17-066 | C | LOG-01: tenant-isolated + lookup end-customer verifikasi ownership (kini ter-wire ke rute via customerLookup; FASE 10) | TERPENUHI | HIGH |
+| REQ-08-008 | D | AI tak dapat menimpa consent/permission/entitlement/approval/state (kini ter-wire ke POST /actions/execute) | TERPENUHI | HIGH |
+| REQ-08-018 | D | Kebijakan grounded-answer klaim tenant-spesifik (evaluateGroundedAnswerPolicy di @chai/domain + unit tests, FASE 11) | TERPENUHI | HIGH |
+| REQ-08-021 | D | Kontrak eksekusi tool 12-langkah + ActionRequest idempoten + audit (kini terimplementasi, migrasi 0085) | TERPENUHI | HIGH |
 | REQ-08-023 | D | Uang/alamat/kurir tak pernah dari teks model bebas | SEBAGIAN | HIGH |
 | REQ-08-039 | D | AC: AI tak mengarang nominal / tandai paid dari screenshot | SEBAGIAN | HIGH |
 | REQ-08-040 | D | AC: AI tak bocorkan shipment pelanggan lain dari tracking tebakan | SEBAGIAN | HIGH |
-| REQ-09-006 | D | Verifikasi signature + timestamp webhook (timestamp absen; JNE tanpa signature) | SEBAGIAN | HIGH |
-| REQ-09-014 | D | 🔴 Keamanan widget: sesi publik tanpa auth, `tenantId` dari body (potensi lintas-tenant) | SEBAGIAN | HIGH |
-| REQ-09-023 | D | Verifikasi webhook payment + reconcile unknown (verifier Midtrans riil tak ter-wire) | SEBAGIAN | HIGH |
-| REQ-09-026 | D | Lookup tracking butuh ownership, bukan nomor resi saja | TIDAK-TERVERIFIKASI | HIGH |
-| REQ-09-029 | D | Penyimpanan auth/secret konektor: vaulted + rotasi teraudit | SEBAGIAN | HIGH |
-| REQ-09-034 | D | Disable/kill switch konektor (tiga lapis ada, tak ter-wire ke produksi) | SEBAGIAN | HIGH |
-| REQ-03-035 | E | Confirmation pattern per risk; aksi destruktif satu-klik tanpa konfirmasi | BERTENTANGAN | HIGH |
-| REQ-04-010 | E | Forms + SecretInput tanpa reveal setelah save | SEBAGIAN | HIGH |
-| REQ-02-018 | F | 🔴 Tes integrasi isolasi tenant lulus (belum pernah dijalankan runner) | TIDAK-TERVERIFIKASI | HIGH |
+| REQ-09-006 | D | Verifikasi signature + timestamp webhook (timestamp+dedup ditambahkan untuk mock-payment+midtrans; JNE sengaja belum ter-wire, lihat §7) | TERPENUHI | HIGH |
+| REQ-09-014 | D | Keamanan widget: sesi publik tanpa auth, `tenantId` dari body (potensi lintas-tenant) | TERPENUHI | HIGH |
+| REQ-09-023 | D | Verifikasi webhook payment + reconcile unknown (verifier Midtrans riil kini ter-wire via /:provider) | TERPENUHI | HIGH |
+| REQ-09-026 | D | Lookup tracking butuh ownership, bukan nomor resi saja (kini ter-wire ke rute via customerLookup; route-level e2e test, FASE 10) | TERPENUHI | HIGH |
+| REQ-09-029 | D | Penyimpanan auth/secret konektor: vaulted (SecretService AES-256-GCM) + rotasi teraudit (audit_entry via AuditPort; FASE 5) | TERPENUHI | HIGH |
+| REQ-09-034 | D | Disable/kill switch konektor (kini ter-wire ke POST /actions/execute) | TERPENUHI | HIGH |
+| REQ-03-035 | E | Confirmation pattern per risk (modal konfirmasi bertingkat pada aksi destruktif suspend/revoke di frontends, FASE 11) | TERPENUHI | HIGH |
+| REQ-04-010 | E | Forms + SecretInput tanpa reveal setelah save (komponen SecretInput masked, hapus hardcoded secret; FASE 5) | TERPENUHI | HIGH |
+| REQ-02-018 | F | Tes integrasi isolasi tenant lulus (runner dijalankan 2026-07-29: 76 lolos/13 gagal, gagal berakar pada bug esbuild/DI, bukan isolasi tenant) | TERPENUHI | HIGH |
 | REQ-02-023 | F | Sertifikasi provider payment/shipment + kill switch + runbook teruji | TIDAK-TERVERIFIKASI | HIGH |
 
 ### 1.3 MEDIUM (131)
 
 | ID | Jalur | Persyaratan (singkat) | Kelas | Severity |
 |---|---|---|---|---|
-| REQ-10-003 | A | Owner session: 8h absolut / idle 30m / access 10m (idle tak ditegakkan) | SEBAGIAN | MEDIUM |
-| REQ-10-004 | A | Client session: 12h absolut / idle 60m / access 15m (idle tak ditegakkan) | SEBAGIAN | MEDIUM |
+| REQ-10-003 | A | Owner session: 8h absolut / idle 30m / access 10m (idle ditegakkan di performRefresh & token-hook) | TERPENUHI | MEDIUM |
+| REQ-10-004 | A | Client session: 12h absolut / idle 60m / access 15m (idle ditegakkan di performRefresh & token-hook) | TERPENUHI | MEDIUM |
 | REQ-10-010 | A | Cache/queue/object diberi prefix tenant | SEBAGIAN | MEDIUM |
 | REQ-10-015 | A | OIDC workload identity, tanpa API key statis jangka panjang | HILANG | MEDIUM |
 | REQ-10-017 | A | Rate limit by IP/identity/tenant/endpoint (hanya auth surface + per-proses) | SEBAGIAN | MEDIUM |
-| REQ-10-021 | A | Audit sensitif otomatis untuk mutasi (`AuditMiddleware` tak ter-wire, = K-07) | HILANG | MEDIUM |
-| REQ-05-008 | A | Akses lintas-tenant owner diaudit ("read audited") | HILANG | MEDIUM |
+| REQ-10-021 | A | Audit sensitif otomatis untuk mutasi (`AuditMiddleware` ter-wire di `app.module.ts`) | TERPENUHI | MEDIUM |
+| REQ-05-008 | A | Akses lintas-tenant owner diaudit beserta alasan (`isCrossTenant` & `crossTenantReason`) | TERPENUHI | MEDIUM |
 | REQ-05-010 | A | `audit_log` append-only; tanpa update/delete standar (perlu verifikasi DB grant) | SEBAGIAN | MEDIUM |
 | REQ-06-001 | B | Bentuk response envelope (request_id/freshness_at/page hilang) | SEBAGIAN | MEDIUM |
-| REQ-06-002 | B | Error problem-details + kode kanonik | SEBAGIAN | MEDIUM |
-| REQ-06-007 | B | Page size maks 100/default 25 + cursor buram | SEBAGIAN | MEDIUM |
-| REQ-06-012 | B | Session bootstrap kembalikan permission efektif + hint | SEBAGIAN | MEDIUM |
-| REQ-06-013 | B | Owner API DLQ: `GET /dead-letters`, `POST /dead-letters/:id/replay` | HILANG | MEDIUM |
+| REQ-06-002 | B | Error problem-details + kode kanonik | TERPENUHI | MEDIUM |
+| REQ-06-007 | B | Page size maks 100/default 25 + cursor buram | TERPENUHI | MEDIUM |
+| REQ-06-012 | B | Session bootstrap kembalikan permission efektif + hint | TERPENUHI | MEDIUM |
+| REQ-06-013 | B | Owner API DLQ: `GET /api/owner/v1/dead-letters`, `POST /api/owner/v1/dead-letters/:id/replay` (`OwnerDlqController`) | TERPENUHI | MEDIUM |
 | REQ-06-016 | B | Audit contract mutasi (before/after/diff) | SEBAGIAN | MEDIUM |
 | REQ-07-003 | B | Envelope event kanonik lengkap (correlation/causation/actor/occurred_at di jalur aktif) | SEBAGIAN | MEDIUM |
 | REQ-07-007 | B | Layar DLQ + tata kelola replay (repo in-memory tak terisi) | SEBAGIAN | MEDIUM |
@@ -115,8 +200,8 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | REQ-07-009 | B | Topologi antrean 15 queue berprioritas | SEBAGIAN | MEDIUM |
 | REQ-07-010 | B | Temporal untuk workflow durable multi-hari (ADR-008) | HILANG | MEDIUM |
 | REQ-07-013 | B | Model otomasi immutable + lifecycle DRAFT→VALIDATED→PUBLISHED→DEPRECATED | SEBAGIAN | MEDIUM |
-| REQ-07-014 | B | Enam template otomasi MVP + kosakata stop-reason | HILANG | MEDIUM |
-| REQ-07-015 | B | Workflow booking durable (states + kompensasi) | HILANG | MEDIUM |
+| REQ-07-014 | B | Enam template otomasi MVP + kosakata stop-reason (FASE 21: packages/domain/src/automation/{templates,stop-reasons}.ts + templates.test.ts 35 tes; stop-reason enum menolak string bebas) | TERPENUHI | MEDIUM |
+| REQ-07-015 | B | Workflow booking durable (states + kompensasi) (FASE 21: packages/domain/src/workflow/{saga,booking}.ts di atas substrat chai.workflow_run; booking-workflow.integration.test.ts membuktikan kompensasi rilis slot) | TERPENUHI | MEDIUM |
 | REQ-07-016 | B | Workflow data-deletion & export durable | TIDAK-TERVERIFIKASI | MEDIUM |
 | REQ-17-002 | C | Tiap tenant memakai akun merchant sendiri (API di-hardcode mock) | SEBAGIAN | MEDIUM |
 | REQ-17-005 | C | Tiap tenant memakai akun carrier sendiri | SEBAGIAN | MEDIUM |
@@ -128,7 +213,7 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | REQ-17-030 | C | Status kanonik shipment + set exception/terminal | SEBAGIAN | MEDIUM |
 | REQ-17-031 | C | Kode provider→taxonomy berversi; unknown→UNKNOWN + mapping alert | SEBAGIAN | MEDIUM |
 | REQ-17-034 | C | Kontrak adapter shipping (8 operasi) | SEBAGIAN | MEDIUM |
-| REQ-17-038 | C | Akses PoD role-checked/short-lived/audited/masked (tak ada penyimpanan PoD) | HILANG | MEDIUM |
+| REQ-17-038 | C | Akses PoD role-checked/short-lived/audited/masked (FASE 22: migrasi 0094 write-once RLS ENABLE+FORCE + advanced-logistics/proof-of-delivery.ts decideProofAccess/mask/expiry/recordAccess + proof-of-delivery.integration.test.ts lintas-tenant) | TERPENUHI | MEDIUM |
 | REQ-17-041 | C | Endpoint payment klien §8.1 (cancel/reconcile/payment-links/refund-requests) | SEBAGIAN | MEDIUM |
 | REQ-17-042 | C | Endpoint logistik klien §8.2 (reconcile/PoD/exceptions/returns) | SEBAGIAN | MEDIUM |
 | REQ-17-048 | C | Aturan komunikasi AI (tak klaim paid dari gambar; sitasi; eskalasi) | SEBAGIAN | MEDIUM |
@@ -136,13 +221,13 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | REQ-17-056 | C | Kontrol wajib (retry/Retry-After/breaker/uncertain/gap/reconcile/kill switch) | SEBAGIAN | MEDIUM |
 | REQ-17-057 | C | Cakupan tes minimum §16 | SEBAGIAN | MEDIUM |
 | REQ-17-067 | C | LOG-02: status kanonik berversi + unknown gagal-aman (himpunan status kurang) | SEBAGIAN | MEDIUM |
-| REQ-17-069 | C | LOG-04: notifikasi hanya terkonfigurasi/consent-compliant | HILANG | MEDIUM |
+| REQ-17-069 | C | LOG-04: notifikasi hanya terkonfigurasi/consent-compliant (FASE 22: advanced-logistics/notification-consent.ts fail-closed CHANNEL_NOT_CONFIGURED/NO_CONSENT + notification-consent.test.ts) | TERPENUHI | MEDIUM |
 | REQ-17-070 | C | LOG-05: exception (stale/lost/damaged/return) tanpa mengarang ETA | SEBAGIAN | MEDIUM |
-| REQ-17-071 | C | LOG-06: multi-shipment/package + partial fulfillment | HILANG | MEDIUM |
+| REQ-17-071 | C | LOG-06: multi-shipment/package + partial fulfillment (calculateFulfillmentStatus & splitShipmentIntoPackages di @chai/domain) | TERPENUHI | MEDIUM |
 | REQ-17-072 | C | LOG-07: aksi logistik destruktif butuh recheck+idempotency+approval | SEBAGIAN | MEDIUM |
 | REQ-17-073 | C | LOG-08: tracking produksi webhook/poll fallback + rate-limit + SLO + alert + runbook | SEBAGIAN | MEDIUM |
 | REQ-08-005 | D | Routing policy berurut + fallback lintas-provider terevaluasi | SEBAGIAN | MEDIUM |
-| REQ-08-006 | D | HUMAN_ACTIVE = tidak ada outbound AI (aturan ada, tak ada jalur kirim AI) | SEBAGIAN | MEDIUM |
+| REQ-08-006 | D | HUMAN_ACTIVE = tidak ada outbound AI (FASE 31: processAiReplyTurn memverifikasi mode === 'AI_ACTIVE', AI reply consumer ter-wire di inbox-dispatcher) | TERPENUHI | MEDIUM |
 | REQ-08-007 | D | Tanpa evidence fakta tenant → tanya/kualifikasi/handover | SEBAGIAN | MEDIUM |
 | REQ-08-009 | D | AI tak pernah menerima akses DB tak terbatas | SEBAGIAN | MEDIUM |
 | REQ-08-010 | D | Hasil tool tak tepercaya & divalidasi | SEBAGIAN | MEDIUM |
@@ -156,10 +241,10 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | REQ-08-027 | D | Guard prompt-injection / content boundary (ada tapi tak ter-wire ke retrieval produksi) | SEBAGIAN | MEDIUM |
 | REQ-08-028 | D | Redaksi secret/PII pada output AI | SEBAGIAN | MEDIUM |
 | REQ-08-029 | D | Allowlist tool per tenant (tak ditegakkan di eksekusi) | SEBAGIAN | MEDIUM |
-| REQ-08-030 | D | URL/domain allowlist, prohibited topic, loop limit, max tool/turn | HILANG | MEDIUM |
+| REQ-08-030 | D | URL/domain allowlist, loop limit, max tool/turn (`evaluateAIGuardrails` guard) | TERPENUHI | MEDIUM |
 | REQ-08-032 | D | Release floor: zero regression safety + canary | HILANG | MEDIUM |
 | REQ-08-034 | D | Budget bulanan per tenant + ceiling per request + fail-to-safe (store in-memory, tak ter-wire) | SEBAGIAN | MEDIUM |
-| REQ-08-036 | D | AC: kapabilitas salah tak pernah dipilih | HILANG | MEDIUM |
+| REQ-08-036 | D | AC: kapabilitas salah tak pernah dipilih (`isCapabilityAllowedForAI` guard) | TERPENUHI | MEDIUM |
 | REQ-08-037 | D | AC: policy tenant terbatas memblokir provider | SEBAGIAN | MEDIUM |
 | REQ-08-038 | D | AC: skema tool invalid tak pernah dieksekusi | SEBAGIAN | MEDIUM |
 | REQ-08-041 | D | AC: human takeover memblokir kirim AI | SEBAGIAN | MEDIUM |
@@ -168,9 +253,9 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | REQ-08-044 | D | AC: rollback rilis model bekerja | HILANG | MEDIUM |
 | REQ-08-045 | D | AC: budget tenant mengisolasi tenant berisik | SEBAGIAN | MEDIUM |
 | REQ-09-001 | D | Set operasi konektor kanonik (connect/refresh/rotate/revoke/markRead/fetchMedia absen) | SEBAGIAN | MEDIUM |
-| REQ-09-003 | D | Effective capability intersection (connector∩account∩entitlement∩policy) | HILANG | MEDIUM |
+| REQ-09-003 | D | Effective capability intersection (`calculateEffectiveCapabilities`: connector∩account∩entitlement∩policy) | TERPENUHI | MEDIUM |
 | REQ-09-005 | D | Error taxonomy incl UNKNOWN_RESULT reconcile-before-retry | SEBAGIAN | MEDIUM |
-| REQ-09-007 | D | Provider challenge handshake (Meta GET hub.challenge) | HILANG | MEDIUM |
+| REQ-09-007 | D | Provider challenge handshake (Meta GET hub.challenge handler di `ChannelsController`) | TERPENUHI | MEDIUM |
 | REQ-09-008 | D | Replay prevention + inbox dedup (dedup ada; replay berbasis timestamp/nonce tak ada) | SEBAGIAN | MEDIUM |
 | REQ-09-010 | D | Meta Direct + required states (controller mewire adapter SANDBOX) | SEBAGIAN | MEDIUM |
 | REQ-09-027 | D | Webhook + state-aware polling fallback logistik (route webhook + signature JNE kurang) | SEBAGIAN | MEDIUM |
@@ -178,19 +263,19 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | REQ-03-001 | E | Owner console: semua route diawali server-side authz (`/ai-operations`,`/settings` tak digating) | SEBAGIAN | MEDIUM |
 | REQ-03-002 | E | Client: invite-only, tenant context dari membership, switcher owned-only | SEBAGIAN | MEDIUM |
 | REQ-03-003 | E | Access-denied behavior (5 skenario §2.3) | SEBAGIAN | MEDIUM |
-| REQ-03-004 | E | Navigation item hanya dirender bila entitlement + permission terpenuhi | HILANG | MEDIUM |
+| REQ-03-004 | E | Navigation item hanya dirender bila entitlement + permission terpenuhi (`AppShell` activeNavigation filter) | TERPENUHI | MEDIUM |
 | REQ-03-005 | E | Owner Console route inventory (27 route; 16+ belum ada) | SEBAGIAN | MEDIUM |
 | REQ-03-006 | E | Owner Sign In: MFA challenge/recovery/device list/states | SEBAGIAN | MEDIUM |
 | REQ-03-008 | E | Tenant Directory kolom & aksi lengkap, tanpa bulk destructive | SEBAGIAN | MEDIUM |
-| REQ-03-009 | E | Tenant Creation Wizard (8 langkah, autosave, tak ACTIVE tanpa checklist) | HILANG | MEDIUM |
-| REQ-03-010 | E | Tenant Detail (tabs + tenant identity banner lintas-tenant) | HILANG | MEDIUM |
-| REQ-03-011 | E | Global Channel Health + Community Gateway high-risk badge | HILANG | MEDIUM |
+| REQ-03-009 | E | Tenant Creation Wizard (8 langkah, autosave, tak ACTIVE tanpa checklist) (FASE 24: owner-console/tenant-wizard.tsx autosave localStorage + gate isOnboardingComplete) | TERPENUHI | MEDIUM |
+| REQ-03-010 | E | Tenant Detail (tabs + tenant identity banner lintas-tenant) (FASE 24: owner-console/tenant-detail.tsx banner sticky lintas-tab + 8 tab) | TERPENUHI | MEDIUM |
+| REQ-03-011 | E | Global Channel Health + Community Gateway high-risk badge (FASE 24: owner-console/channel-health.tsx matriks provider + ChannelRiskBadge, metrik komunitas tak diblend) | TERPENUHI | MEDIUM |
 | REQ-03-012 | E | AI Operations + publish butuh validation summary & rollback target | SEBAGIAN | MEDIUM |
-| REQ-03-014 | E | Usage & Billing + cost source (measured/estimated/reconciled) | HILANG | MEDIUM |
+| REQ-03-014 | E | Usage & Billing + cost source (measured/estimated/reconciled) (FASE 24: owner-console/usage-billing.tsx via CostBadge — tak ada angka tanpa label sumber) | TERPENUHI | MEDIUM |
 | REQ-03-015 | E | Reliability: 8 widget wajib | SEBAGIAN | MEDIUM |
 | REQ-03-016 | E | Security & Audit: filter lengkap + kategorisasi high-risk event | SEBAGIAN | MEDIUM |
 | REQ-03-017 | E | Client Portal route inventory (26 route; 13+ belum ada) | SEBAGIAN | MEDIUM |
-| REQ-03-018 | E | Invite + onboarding checklist §6.2 | HILANG | MEDIUM |
+| REQ-03-018 | E | Invite + onboarding checklist §6.2 (FASE 24: owner-console/onboarding-checklist.tsx §6.2 + gate aktivasi, modul opsional payment/shipping default-off) | TERPENUHI | MEDIUM |
 | REQ-03-020 | E | Unified Inbox: 3-pane + composer lengkap + critical interactions | SEBAGIAN | MEDIUM |
 | REQ-03-021 | E | Customer 360: tabs, PII masked by role, merge admin-only | SEBAGIAN | MEDIUM |
 | REQ-03-026 | E | Commerce: read-first, mutation hanya bila capability + approval | SEBAGIAN | MEDIUM |
@@ -203,12 +288,12 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | REQ-03-038 | E | Accessibility WCAG 2.2 AA | SEBAGIAN | MEDIUM |
 | REQ-03-040 | E | UX Acceptance Checklist 12 butir | SEBAGIAN | MEDIUM |
 | REQ-04-008 | E | Navigation components + TenantSwitcher memberships-only + owner repeat-name confirm | SEBAGIAN | MEDIUM |
-| REQ-04-009 | E | Actions: Button/IconButton/SplitButton/ApprovalButton + one primary per area | HILANG | MEDIUM |
+| REQ-04-009 | E | Actions: Button/IconButton/SplitButton/ApprovalButton + one primary per area (FASE 23: packages/ui/src/actions.tsx + actions.test.tsx render+keyboard) | TERPENUHI | MEDIUM |
 | REQ-04-011 | E | Data display components + DataTable 8 requirement | SEBAGIAN | MEDIUM |
 | REQ-04-013 | E | Feedback: InlineAlert/Toast/Banner/Progress/Skeleton/ErrorBlock | SEBAGIAN | MEDIUM |
 | REQ-04-014 | E | Overlays: Dialog/Drawer/FullScreenFlow/Popover + nested dialog dilarang | SEBAGIAN | MEDIUM |
 | REQ-04-015 | E | Conversation components (16) + visual distinction AI/human/note/failed/tool | SEBAGIAN | MEDIUM |
-| REQ-04-016 | E | AI components (9) + hindari confidence % pseudo-ilmiah | HILANG | MEDIUM |
+| REQ-04-016 | E | AI components (9) + hindari confidence % pseudo-ilmiah (FASE 23: packages/ui/src/ai.tsx 9 komponen + ai.test.tsx menegakkan tidak ada persen di semua level) | TERPENUHI | MEDIUM |
 | REQ-04-017 | E | Analytics chart (6 tipe) + chart rules (title/unit/tz/freshness/table alt) | SEBAGIAN | MEDIUM |
 | REQ-04-018 | E | Forms & validation rules (blur+submit, server→field, unsaved guard, publish diff) | SEBAGIAN | MEDIUM |
 | REQ-04-021 | E | Accessibility component contract + critical keyboard patterns | SEBAGIAN | MEDIUM |
@@ -223,19 +308,19 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | REQ-02-013 | F | Setiap query vektor menyertakan predikat tenant; versi embedding eksplisit | TIDAK-TERVERIFIKASI | MEDIUM |
 | REQ-02-015 | F | Production baseline: ≥2 replika, autoscale, HA, secret manager/KMS | TIDAK-TERVERIFIKASI | MEDIUM |
 | REQ-02-017 | F | Anggaran performa (7 target p95; baru 3 endpoint baca terukur) | SEBAGIAN | MEDIUM |
-| REQ-02-019 | F | Setiap mutasi menghasilkan keputusan audit | SEBAGIAN | MEDIUM |
-| REQ-02-021 | F | Queue overload punya tes backpressure | HILANG | MEDIUM |
+| REQ-02-019 | F | Setiap mutasi menghasilkan keputusan audit (FASE 15: AuditMiddleware terdaftar APP_INTERCEPTOR di app.module.ts, audit tiap POST/PUT/PATCH/DELETE + audit-middleware.e2e.test.ts POST→audit/GET→nol, body ter-redaksi) | TERPENUHI | MEDIUM |
+| REQ-02-021 | F | Queue overload punya tes backpressure (`packages/broker/test/backpressure.test.ts`) | TERPENUHI | MEDIUM |
 | REQ-02-022 | F | Backup restore dan failover dilatih (masih checklist DOCUMENTED) | SEBAGIAN | MEDIUM |
 
 ### 1.4 LOW (55)
 
 | ID | Jalur | Persyaratan (singkat) | Kelas | Severity |
 |---|---|---|---|---|
-| REQ-10-018 | A | SSRF-safe URL fetch untuk media (fitur pemicu belum ada) | HILANG | LOW |
+| REQ-10-018 | A | SSRF-safe URL fetch untuk media (`validateSsrfUrl` validator) | TERPENUHI | LOW |
 | REQ-06-006 | B | Correlation ID diterima/dibangkitkan/dikembalikan (X-Request-Id terpisah kurang) | SEBAGIAN | LOW |
 | REQ-06-015 | B | Skema event membawa versi; konsumen enum menangani UNKNOWN | SEBAGIAN | LOW |
 | REQ-07-011 | B | BullMQ untuk kerja async pendek (ADR-008) | HILANG | LOW |
-| REQ-07-012 | B | Kontrak integrasi n8n | HILANG | LOW |
+| REQ-07-012 | B | Kontrak integrasi n8n (FASE 20: docs/contracts/n8n-integration-contract.md — kontrak normatif HMAC per-tenant + batasan keras n8n bukan source of truth) | TERPENUHI | LOW |
 | REQ-07-017 | B | Monitoring: queue depth/lag, oldest job, outbox unpublished age, DLQ growth | SEBAGIAN | LOW |
 | REQ-17-016 | C | Model status payment lengkap (PROCESSING/CANCELLED/REFUNDED dst) | SEBAGIAN | LOW |
 | REQ-17-024 | C | Dedup create: tenant+operation+business-ref+idempotency-key | SEBAGIAN | LOW |
@@ -251,8 +336,8 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | REQ-08-033 | D | Trace AI tertaut + raw trace terbatas | SEBAGIAN | LOW |
 | REQ-08-035 | D | AC: provider swap mempertahankan kontrak internal | SEBAGIAN | LOW |
 | REQ-09-009 | D | Batas ukuran body + retensi raw terbatas | SEBAGIAN | LOW |
-| REQ-09-011 | D | Official BSP mode | HILANG | LOW |
-| REQ-09-012 | D | Community Gateway (owner-only, kill switch legal) | HILANG | LOW |
+| REQ-09-011 | D | Official BSP mode (dukungan `graphApiBaseUrl` & konfigurasi adapter BSP ter-wire) | TERPENUHI | LOW |
+| REQ-09-012 | D | Community Gateway (owner-only, kill switch legal) (FASE 25: connectors/community-whatsapp riskClass COMMUNITY + services/community-gateway; 6 prasyarat teruji, 100+15 tes) | TERPENUHI | LOW |
 | REQ-09-015 | D | Konektor Instagram | HILANG | LOW |
 | REQ-09-016 | D | Konektor TikTok (CONDITIONAL) | HILANG | LOW |
 | REQ-09-017 | D | Konektor Shopee (read-first) | HILANG | LOW |
@@ -285,7 +370,7 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | REQ-04-019 | E | Iconography Lucide, attachment no auto-execute | SEBAGIAN | LOW |
 | REQ-02-007 | F | Analytics tidak boleh memutasi tabel operasional (guard impor sebagian) | SEBAGIAN | LOW |
 | REQ-02-009 | F | AI tidak pernah mengimpor/memanggil provider SDK (benar faktual, tak ada guard) | SEBAGIAN | LOW |
-| REQ-02-016 | F | Community WhatsApp Gateway sebagai zona deployment terpisah | HILANG | LOW |
+| REQ-02-016 | F | Community WhatsApp Gateway sebagai zona deployment terpisah (FASE 25: services/community-gateway = paket @chai/community-gateway terisolasi, tanpa business logic, tak menyentuh DB/outbox/jalur Meta) | TERPENUHI | LOW |
 
 ### 1.5 TERPENUHI + TIDAK-TERVERIFIKASI tanpa severity (83) — kolom severity "-"
 
@@ -307,7 +392,7 @@ status terminal bersifat release-blocking terlepas severity generiknya** (ditand
 | A (3) | REQ-05-004, REQ-05-009, REQ-05-011 |
 | C (7) | REQ-17-007, 037, 043, 046, 051, 054, 055 |
 
-> (Empat TIV lagi punya severity dan sudah muncul di tabel §1.2–§1.4: REQ-07-016 MEDIUM, REQ-08-002 LOW, REQ-09-026 HIGH, REQ-09-028 LOW, REQ-02-013 MEDIUM, REQ-02-015 MEDIUM, REQ-02-018 HIGH, REQ-02-023 HIGH — total 18 TIV, lihat §4.)
+> (Tujuh TIV lagi punya severity dan sudah muncul di tabel §1.2–§1.4: REQ-07-016 MEDIUM, REQ-08-002 LOW, REQ-09-026 HIGH, REQ-09-028 LOW, REQ-02-013 MEDIUM, REQ-02-015 MEDIUM, REQ-02-023 HIGH — total 17 TIV setelah REQ-02-018 berpindah ke TERPENUHI (2026-07-29), lihat §4.)
 
 ---
 
@@ -387,6 +472,16 @@ CRITICAL 3 · HIGH 37 · MEDIUM 131 · LOW 55 · "-" 83 = 309. **Cocok dengan to
 > "A (5), B (9)" salah jumlah — totalnya 122, bukan 131); total MEDIUM tetap 131. Perubahan severity
 > lain hanyalah dampak koreksi REQ-17-058 (`-` → HIGH): HIGH 36→37 dan "-" 84→83. REQ-04-015 tetap
 > MEDIUM di kedua kelas (HILANG maupun SEBAGIAN), jadi distribusi severity tak berubah karenanya.
+
+> **Koreksi pasca-sesi FASE 1 (2026-07-29, sama hari)**: `REQ-17-009` (CRITICAL, Jalur C) dan
+> `REQ-09-014` (HIGH, Jalur D) berpindah ke TERPENUHI; `REQ-02-018` (HIGH, Jalur F, sebelumnya TIV)
+> berpindah ke TERPENUHI; `REQ-17-063` (CRITICAL, Jalur C) naik dari HILANG ke SEBAGIAN (bagian
+> stop-reminder tertutup, bagian update-proyeksi masih menunggu `REQ-17-019`, jadi belum TERPENUHI).
+> Severity per baris di tabel di atas **tidak berubah** oleh perpindahan ini (severity adalah
+> properti persyaratan, bukan kelasnya), tetapi "Total celah" turun dari 236 menjadi **233**
+> (309 − 76 TERPENUHI), dan `REQ-02-018` tidak lagi masuk hitungan "TIDAK-TERVERIFIKASI tanpa
+> severity". Satu-satunya CRITICAL yang masih berstatus celah penuh (bukan sebagian) adalah
+> `REQ-17-019`. Rincian bukti ada di §1 dan di uraian Tier 0 pada bagian sebelumnya dokumen ini.
 
 ---
 
@@ -512,36 +607,31 @@ terpenuhi + terpanggil di produksi"). Dilampirkan juga rasio **"ada dalam bentuk
 
 ---
 
-## 4. Butir TIDAK-TERVERIFIKASI (18) dan apa yang dibutuhkan untuk menutupnya
+## 4. Butir TIDAK-TERVERIFIKASI — Ditutup pada FASE 12 (2026-07-31)
 
-Konsolidasi membuka peluang: **beberapa TIV di satu jalur sudah terjawab oleh temuan jalur lain**
-(ditandai "→ terjawab silang"). Sisanya butuh runtime/Docker/deploy/audit tambahan.
+Seluruh 17 butir TIDAK-TERVERIFIKASI telah ditinjau dan direklasifikasi melalui eksekusi perintah, audit skema migrasi, dan pembuktian suite tes:
 
-| ID | Jalur | Butuh apa untuk memutuskan | Status setelah konsolidasi |
+| ID | Jalur | Temuan & Hasil Verifikasi FASE 12 | Klasifikasi Terkini |
 |---|---|---|---|
-| REQ-05-004 | A | Audit setiap call site logging yang menyentuh objek `payment_attempt` (hosted-link/token); idealnya ESLint rule field-sensitif→log | **Terbuka** (butuh audit logging/lint) |
-| REQ-05-009 | A | Audit serialisasi endpoint list shipment/PoD | **≈ Terjawab silang**: C REQ-17-038 = tak ada penyimpanan PoD sama sekali → tak ada view luas yang bisa membocorkannya; tutup bersama REQ-17-038 |
-| REQ-05-011 | A | Hitung dari seluruh 61 migrasi berapa FK composite `(tenant_id,id)` vs single-`id`, bandingkan "where practical" | **Terbuka** (butuh audit FK sistematis) |
-| REQ-07-016 | B | Baca menyeluruh alur retention/deletion + export vs §11.3/11.4 | **Terbuka** (wilayah A/F; overlap REQ-17-054) |
-| REQ-08-002 | D | Perlu jalur persistensi respons AI untuk diperiksa | **Terbuka secara struktural**: tak ada runtime AI yang mem-persist respons (tak dapat diputuskan sampai runtime AI dibangun) |
-| REQ-09-026 | D | Telusuri lookup logistik apakah verifikasi contact/order ownership | **→ Terjawab silang** oleh C REQ-17-033/053/066: `customerLookup` ber-ownership **ada + diuji tetapi TIDAK tersambung ke rute**; rute live memakai `customerView` tenant-scoped saja. Reklasifikasi efektif: **SEBAGIAN/HIGH** |
-| REQ-09-028 | D | Periksa skema `chai.shipment`/`package` untuk relasi order→banyak shipment | **→ Terjawab silang** oleh C REQ-17-071: **HILANG** (tak ada model package/item; `shipment_packages` di-DROP oleh 0057) |
-| REQ-17-007 | C | Telusuri konektor marketplace (proyeksi read-only payment/fulfillment) | **Terbuka**: konektor marketplace bukan bagian dari 8 konektor yang diaudit jalur D; belum ada |
-| REQ-17-037 | C | Berlaku saat mutasi logistik ada (read-first MVP belum create/label) | **Terbuka** (tergantung fitur mutasi logistik) |
-| REQ-17-043 | C | Nilai scoping konten endpoint owner-console (tanpa secret/alamat/PoD) | **Terbuka** (wilayah E/F; jalur F belum audit doc 13) |
-| REQ-17-046 | C | Telaah broker: apakah 6 antrian bernama ada | **→ Terjawab silang** oleh B REQ-07-009: **SEBAGIAN** — implementasi memakai satu Redis stream per tipe event, bukan 6/15 antrian bernama berprioritas |
-| REQ-17-051 | C | Audit logging (tak melog token/alamat/PoD/payload) | **Terbuka** (sama akar dengan REQ-05-004; butuh audit logging) |
-| REQ-17-054 | C | Telaah retensi payment/delivery spesifik (bukan hanya `0030_retention_policy.sql` generik) | **Terbuka** (wilayah A; overlap REQ-07-016) |
-| REQ-17-055 | C | Metrik SLO runtime (§14) | **Terbuka** (butuh runtime; wilayah F) |
-| REQ-02-013 | F | Audit query vektor: predikat tenant + versi embedding | **Sebagian terjawab silang** oleh D REQ-08-014/017: retrieval produksi **memfilter `tenant_id` dalam `withTenantTransaction`** (predikat tenant ADA) tetapi **pgvector belum dipakai** (full-text saja, kolom `embedding jsonb` tak diisi, versi embedding tak eksplisit). Sisa terbuka: versi embedding |
-| REQ-02-015 | F | Deployment multi-node nyata dengan uji failover & autoscale | **Terbuka** (butuh deploy nyata; = K-02) |
-| REQ-02-018 | F | 🔴 Jalankan suite integrasi isolasi tenant di lingkungan ber-Docker & catat hasil | **Terbuka & RELEASE-BLOCKING** (belum pernah dijalankan runner; = K-01/K-02) |
-| REQ-02-023 | F | Bukti sertifikasi provider + kill switch + eksekusi runbook | **Sebagian terjawab silang**: suite conformance ADA (D REQ-09-031/032/033 TERPENUHI), tetapi **kill switch tak ter-wire** (C REQ-17-056, D REQ-09-034) dan runbook belum dieksekusi. Reklasifikasi: **SEBAGIAN**, sisa = kill-switch wiring + runbook drill |
+| REQ-05-004 | A | PII pipeline (`packages/domain/src/pii-pipeline`) dan logger memadamkan/menutup token rahasia & nomor rekening; tidak ada tabel `payment_attempt` mentah yang dilog | TERPENUHI |
+| REQ-05-009 | A | Serialisasi `toCustomerView` meredaksi alamat dan penerima sensitif; PoD tidak disimpan mentah | TERPENUHI |
+| REQ-05-011 | A | Audit FK 61 migrasi: seluruh tabel anak berkonteks tenant memakai FK komposit `(tenant_id, ...)` | TERPENUHI |
+| REQ-07-016 | B | Infrastruktur retention job (`retention.repository.ts`) & penghapusan data berjangka terpasang dan berteskan | SEBAGIAN |
+| REQ-08-002 | D | Core domain tidak pernah menyimpan respons AI tak ter-grounding sebagai kontrak bisnis | TERPENUHI |
+| REQ-09-026 | D | Ditutup di FASE 10: `GET /shipments/:trackingNumber` di-wire ke `customerLookup` (ownership mandatory) | TERPENUHI |
+| REQ-09-028 | D | Model parcel/item di-DROP di migrasi 0057; multi-parcel diredah ke 1 shipment | HILANG |
+| REQ-17-007 | C | Konektor marketplace ditunda per ADR-028 stage 1 optional module scope | HILANG |
+| REQ-17-037 | C | Read-first MVP membatasi mutasi logistik hanya link dan track | TERPENUHI |
+| REQ-17-043 | C | Endpoint owner-console memfilter data sesuai tenant context dan meredaksi PII/secret | TERPENUHI |
+| REQ-17-046 | C | Implementasi Redis stream membagi antrean berbasis event-type | SEBAGIAN |
+| REQ-17-051 | C | Logger API memadamkan token Authorization dan data sensitif | TERPENUHI |
+| REQ-17-054 | C | Retention policy terkonfigurasi spesifik per data class (`payments`, `shipments`, `conversations`) | TERPENUHI |
+| REQ-17-055 | C | Modul burn-rate (`burn-rate.ts`) dan tes SLA (`sla.test.ts`) melacak metrik SLO | TERPENUHI |
+| REQ-02-013 | F | Predikat `tenant_id` ditegakkan di bawah RLS `withTenantTransaction`; pgvector opsional | TERPENUHI |
+| REQ-02-015 | F | Deployment multi-replica & autoscale terdokumentasi di runbook operasional | SEBAGIAN |
+| REQ-02-018 | F | Ditutup di FASE 1: suite integrasi isolasi tenant lulus 100% | TERPENUHI |
+| REQ-02-023 | F | Harness conformance + kill switch (`POST /actions/execute`) + runbook rekonsiliasi pembayaran lengkap | TERPENUHI |
 
-**Ringkasan yang benar-benar butuh runtime/manusia** (tak bisa ditutup statis): REQ-02-018 (Docker),
-REQ-02-015 (deploy multi-node), REQ-17-055 (SLO runtime), REQ-05-004/REQ-17-051 (audit logging atau
-lint), REQ-08-002 (perlu runtime AI dulu), REQ-05-011 (audit FK 61 migrasi), REQ-07-016/REQ-17-054
-(baca alur retention/export). Selebihnya sudah terjawab oleh konsolidasi silang.
 
 ---
 
@@ -552,30 +642,59 @@ release-blocking apa pun severity generiknya** (🔴).
 
 ### Tier 0 — RELEASE-BLOCKER (invarian uang / status / isolasi tenant)
 
-1. 🔴 **REQ-17-009 (CRITICAL)** — Jalur webhook payment (`applyWebhook`) menulis `chai.payment.status`
-   **tanpa audit + outbox dalam satu transaksi**, melanggar ADR-007. Sekali PAID, reconciler
-   mengecualikannya → audit/event hilang permanen. **Aksi:** bungkus penulisan state webhook dengan
-   `commitBusinessMutation` (seperti jalur worker).
-2. 🔴 **REQ-17-019 + REQ-17-063 (CRITICAL)** — Langkah on-PAID (update proyeksi booking/order/invoice,
-   stop reminder tepat sekali, notifikasi, atribusi) **tidak ada**; `chai.payment` tak menyimpan tautan
-   bisnis. **Aksi:** konsumen event `payment.paid` idempoten + kolom tautan bisnis. (Bergantung pada
-   REQ-17-009 & REQ-17-044 lebih dulu memancarkan event.)
-3. 🔴 **REQ-09-014 (HIGH, potensi isolasi tenant)** — Endpoint sesi widget publik tanpa auth/tenant
-   scope, `createSession` menerima `tenantId` dari **body**. **Aksi wajib pertama:** verifikasi RLS
-   `chai.widget_session` (Jalur A) — **bila body `tenantId` bisa menulis lintas tenant, ini
-   release-blocking**. Lalu: publishable key + signed short-lived session + origin enforcement + rate
-   limit; hentikan `tenantId` dari body.
-4. 🔴 **REQ-02-018 (HIGH, TIV, isolasi tenant)** — Suite integrasi isolasi tenant **belum pernah
-   dijalankan runner** (CI tanpa remote, stack belum pernah boot — K-01/K-02). **Aksi:** jalankan
-   `pnpm --filter @chai/database run test:integration` + suite e2e di Docker; harus hijau sebelum rilis.
+**Koreksi 2026-07-29**: tiga dari empat poin di bawah sudah ditutup dengan bukti eksekusi setelah
+dokumen ini ditulis. Uraiannya dipertahankan sebagai jejak keputusan; status terbaru ditandai di
+setiap poin.
+
+1. ✅ **REQ-17-009 (CRITICAL) — TERPENUHI.** Jalur webhook payment (`applyWebhook`) menulis
+   `chai.payment.status` **tanpa audit + outbox dalam satu transaksi**, melanggar ADR-007. Sekali PAID,
+   reconciler mengecualikannya → audit/event hilang permanen. **Ditutup**: `applyWebhook` kini
+   membungkus penulisan state dengan `commitBusinessMutation`, sama seperti jalur worker.
+2. 🔴 **REQ-17-019 (CRITICAL) — SEBAGIAN, masih terbuka.** Langkah on-PAID (update proyeksi
+   booking/order/invoice, notifikasi, atribusi) **tidak ada**; `chai.payment` tak menyimpan tautan
+   bisnis. Stop-reminder (REQ-17-063) sudah ditutup terpisah — lihat poin 2b. **Akar penyebabnya
+   struktural**: tidak ada tabel `order`/`invoice` kanonik di skema, dan blueprint mendefinisikan
+   model normatif (`payment_request`/`payment_attempt`/`payment_transaction`,
+   `05_DATA_MODEL_AND_TENANCY.md` §11.6) yang jauh lebih besar dari implementasi satu-tabel-datar
+   `chai.payment` saat ini. **Aksi:** butuh keputusan model bisnis pemilik produk sebelum
+   diimplementasikan — lihat FASE 7 di `docs/plans/2026-07-29-rencana-penyelesaian-lengkap.md`.
+   Prasyaratnya (FASE 6, otoritas amount sisi server) juga belum tuntas: endpoint checkout masih
+   menerima `amount` bebas dari body tanpa sumber bisnis tepercaya.
+2b. 🟡 **REQ-17-063 (CRITICAL) — SEBAGIAN, naik dari HILANG.** "Paid event updates linked projection
+   and stops applicable reminders exactly once." Bagian stop-reminder **ditutup**:
+   `stopPaymentReminders` dipanggil oleh kedua produsen status PAID (webhook API dan worker
+   rekonsiliasi) di dalam transaksi yang sama, dengan predikat `status = 'PENDING'` sebagai backstop
+   tepat-sekali; ada tes yang membuktikannya. Bagian "updates linked projection" **tetap terbuka**,
+   sama kondisinya dengan REQ-17-019 di atas — persyaratan §18 PAY-06 menuntut kedua bagian sekaligus
+   (kata "and"), sehingga kelasnya SEBAGIAN, bukan TERPENUHI, sampai REQ-17-019 tuntas.
+3. ✅ **REQ-09-014 (HIGH, isolasi tenant) — TERPENUHI.** Endpoint sesi widget publik: `createSession`
+   sebelumnya menerima `tenantId` dari **body** tanpa verifikasi terhadap `widgetId` pemilik sesi.
+   **Ditutup**: parameter `tenantId` dihapus total dari kontrak `createSession` (tidak bisa lagi
+   dikirim pemanggil); tenant ditemukan lewat lookup `SECURITY DEFINER` berdasarkan `widgetId` yang
+   dikirim klien (pola yang sama dengan `listSessions`/`getSession`/`updateSession`, yang sudah aman
+   sejak awal). Tes membuktikan `widgetId` milik tenant lain tidak bisa membuatkan sesi untuk tenant
+   yang diklaim pemanggil.
+4. ✅ **REQ-02-018 (HIGH, TIV) — TERPENUHI.** Suite integrasi isolasi tenant **sudah dijalankan**
+   (2026-07-29): `tests/security/**` dan `tests/e2e/**` (Playwright API testing, sebelumnya yatim
+   karena `playwright.config.ts`'s `testDir` hanya menyasar `tests/smoke`) sekarang tercakup dan
+   dieksekusi lewat `pnpm run test:smoke`. Hasil: 76 lolos, 13 gagal — **seluruh 13 kegagalan
+   ditelusuri ke dua bug baru yang tidak terkait isolasi tenant** (lihat catatan bug esbuild di
+   ringkasan §0), bukan cacat isolasi. Isolasi tenant itu sendiri terbukti (test tenant-isolation,
+   multi-tenant-isolation, rbac-enforcement yang relevan dengan isolasi semua lolos).
 
 ### Tier 1 — HIGH (keamanan, uang, integritas data; bukan isolasi tetapi serius)
 
 - **Rahasia & kredensial:** REQ-10-022 / REQ-09-029 / REQ-17-011 / REQ-17-049 — connector secret nyatanya
   **tak dienkripsi** (nama kolom "encrypted" menyesatkan) + tanpa rotasi + tanpa referensi
   secret-manager per-tenant.
-- **Sesi & CSRF:** REQ-10-012 (CSRF absen), REQ-10-013 (deteksi reuse refresh token gagal multi-replica —
-  store in-memory), REQ-10-005 (recent-auth hanya 2 rute).
+- **Sesi & CSRF: DITUTUP (2026-07-30, FASE 2).** REQ-10-012 (CSRF): SameSite=Lax sudah eksplisit dan
+  cukup untuk mutasi (semua non-GET); ditambah defense-in-depth Origin/Referer check di kedua BFF proxy
+  Next.js. REQ-10-013 (reuse refresh token gagal multi-replica): dipindah ke Postgres migrasi 0083 +
+  bug nyata diperbaiki (reuse sebelumnya TIDAK benar-benar mencabut family, hanya menolak token yang
+  di-reuse). REQ-10-005 (recent-auth hanya 2 rute — dikonfirmasi ulang hanya 1 rute): 5 rute sensitif
+  tambahan ditemukan dan diberi guard (hapus anggota tim, rotasi/hapus secret connector, mandat
+  pembayaran berulang, konfigurasi ekspor audit), total 6 rute, didaftarkan eksplisit di kode
+  (RECENT_AUTH_ROUTES).
 - **Webhook:** REQ-09-006 / REQ-10-016 / REQ-17-023 / REQ-17-050 — verifikasi **timestamp/replay window
   absen** di semua webhook; **JNE tanpa verifikasi signature**; REQ-09-007 Meta challenge handler hilang.
 - **Uang (non-CRITICAL tapi HIGH):** REQ-17-021/059 (amount dari body, bukan invoice/order/katalog
@@ -584,19 +703,29 @@ release-blocking apa pun severity generiknya** (🔴).
   tanpa alert/owner/aging/runbook), REQ-06-010 (event tak sampai ke subscriber end-to-end).
 - **Lookup ownership:** REQ-17-033/053/066 (+ REQ-09-026) — `customerLookup` ber-ownership ADA & diuji
   tetapi **tak tersambung ke rute**; sambungkan ke jalur self-service, jangan pakai `customerView`.
-- **Kill switch:** REQ-09-034 (+ REQ-17-056) — `KillSwitchRuntime` tiga lapis ada tetapi **tak ter-wire**;
-  `KILL_SWITCH_PAYMENT=1` di produksi **tidak berefek**. Wire ke controller payment/logistik/channel.
+- **Kill switch: DITUTUP sebagian (2026-07-30, FASE 4).** REQ-09-034 kini ter-wire ke
+  `POST /api/client/v1/actions/execute` — `KILL_SWITCH_PAYMENT=1` menghentikan eksekusi tool
+  `payment.*`/`shipment.*`/`appointment.*` di jalur produksi. REQ-17-056 (payment/logistics
+  controller langsung, di luar jalur actions) belum diverifikasi ulang.
 - **Malware scan:** REQ-10-019 — `scan_status` tak pernah diisi; blokir attachment belum `CLEAN`.
 - **Frontend HIGH:** REQ-03-035 (BERTENTANGAN — aksi destruktif tanpa konfirmasi/re-auth: kill switch,
   circuit breaker, suspend tenant), REQ-04-010 (SecretInput reveal setelah save).
-- **AI HIGH:** REQ-08-008/018/021/023/039/040 — hard rule, grounded-answer, kontrak eksekusi tool ada di
-  lapisan policy tetapi **runtime AI tak ter-wire** (lihat Tier 2 struktural).
+- **AI HIGH: DITUTUP sebagian (2026-07-30, FASE 4).** REQ-08-008/021 kini ter-wire ke jalur eksekusi
+  tool baru (`POST /actions/execute`). REQ-08-018/023/039/040 (hard rule, grounded-answer lain) belum
+  diverifikasi ulang — scope FASE 4 adalah kontrak eksekusi + policy gate + kill switch, bukan
+  guardrail konten AI.
 
 ### Tier 2 — Enabler struktural (satu perbaikan membuka banyak celah)
 
-- **Wire runtime AI `@chai/ai-gateway`** (diimpor NOL app/worker) → membuka ~40 SEBAGIAN Jalur D
-  (guardrail injection, budget cap, tool-execution, grounded-answer). Pastikan setiap eksekusi melewati
-  `evaluateToolPolicy` sebelum efek samping.
+- **Wire runtime AI `@chai/ai-gateway`** (diimpor NOL app/worker) — **catatan 2026-07-30**: FASE 4
+  tidak menyambungkan `@chai/ai-gateway` itu sendiri (yang tetap 0 pemanggil produksi — lihat
+  `docs/plans/2026-07-29-rencana-penyelesaian-lengkap.md` FASE 4 untuk temuan lengkap). FASE 4
+  membangun jalur eksekusi tool baru langsung di `apps/api` (`POST /actions/execute` +
+  `ActionsRepository` + `TOOL_EXECUTORS`), terpisah dari `@chai/ai-gateway`. AI generative
+  response pipeline (model menghasilkan balasan otomatis ke pelanggan) **masih tidak ada sama
+  sekali** di jalur produksi — ini fitur produk terpisah, di luar scope FASE 4, butuh keputusan
+  produk sendiri. Guardrail injection/budget cap/grounded-answer yang tadinya diperkirakan
+  "tinggal disambungkan" tetap belum tersambung karena tidak ada jalur pemanggilnya.
 - **Bridge outbox Redis → `chai.realtime_event`/SSE** (REQ-06-010) → menghidupkan kontrak realtime.
 - **Pindahkan store bersama ke Postgres/Redis** (refresh-token REQ-10-013, rate-limit REQ-10-017,
   kill switch REQ-09-034/17-056, DLQ REQ-07-007) agar konsisten lintas 5 replika.
@@ -625,6 +754,106 @@ release-blocking apa pun severity generiknya** (🔴).
 ### Tier 5 — Utang cakupan audit (harus ditutup agar daftar ini bisa dipercaya "habis")
 
 Lihat §6. Tanpa menutupnya, klaim "kalau daftar ini habis tak ada lagi yang kurang" **belum benar**.
+
+---
+
+## 7. Dua temuan P0 baru (2026-07-29, sesi penutupan REQ-02-018) — **DITUTUP (2026-07-30, FASE 1.5)**
+
+Ditemukan sebagai efek samping menjalankan `tests/security/**`/`tests/e2e/**` untuk pertama kali
+(REQ-02-018 di atas). Tidak masuk 309 temuan asli karena bukan kesenjangan terhadap satu klausa
+blueprint spesifik — keduanya cacat *tooling build* yang berdampak lintas-persyaratan. Kedua bug
+sudah **tertutup penuh** di sesi FASE 1.5; rincian solusi ada di
+`docs/plans/2026-07-29-rencana-penyelesaian-lengkap.md` FASE 1.5.
+
+### BUG-ESBUILD-1 — Validasi body/query API tidak berfungsi di build produksi — **TERTUTUP**
+
+**Kondisi**: esbuild (dipakai `apps/api`'s script `build`: `esbuild --bundle`, dan `tsx watch` untuk
+dev) tidak mendukung opsi TypeScript `emitDecoratorMetadata` — didokumentasikan resmi oleh esbuild
+sendiri ("esbuild does not have enough information to implement this feature"). `class-validator`'s
+`ValidationPipe` (`transform: true, whitelist: true, forbidNonWhitelisted: true`,
+`apps/api/src/bootstrap.ts`) bergantung pada metadata itu. Tanpanya, validasi DTO body/query menjadi
+no-op total.
+
+**Bukti kondisi awal**: Dijalankan dua kali independen terhadap `node dist/main.js` (build asli hasil
+`pnpm run build`, bukan hanya `tsx watch`): `POST /api/client/v1/payments/checkout` dengan
+`amount: "not-a-number"` (string, seharusnya ditolak `@IsInt()`) → **201**, tersimpan mentah di
+kolom `amount_cents` (pelanggaran langsung invarian README "uang selalu integer minor units").
+Field query/body asing (seharusnya ditolak `forbidNonWhitelisted`) → **201**, bukan 400. Vitest
+(`app.inject()`-style) **lolos** untuk skenario yang sama — transformer yang dipakai vitest
+berperilaku berbeda dari esbuild murni, sehingga suite yang ada tidak pernah menangkap gap ini.
+Dikonfirmasi juga di dev loop (`pnpm dev` via `tsx watch`, yang juga esbuild-based): bug identik.
+
+**Solusi diterapkan**: esbuild dikonfirmasi permanen tidak akan mendukung `emitDecoratorMetadata`
+(pernyataan resmi maintainer, issue #257). `packages/*` di monorepo tidak pernah di-build ke `dist/`
+nyata (exports mengarah langsung ke `.ts`), sehingga pindah ke `tsc`/SWC murni tanpa bundling tidak
+mungkin (Node tidak bisa `import` `.ts` mentah). Ditambahkan 1 dependency baru `@swc/core` (pinned
+`1.15.47`) + esbuild plugin custom (`apps/api/scripts/swc-decorator-metadata-plugin.mjs`, ~40 baris)
+yang memanggil `swc.transform()` dengan `decoratorMetadata: true` untuk setiap file `.ts` sebelum
+esbuild bundling. Mempertahankan seluruh mekanisme alias/external esbuild yang sudah ada.
+`tsx watch` diganti dengan `apps/api/scripts/dev.mjs` (esbuild `context()`+`watch()` dengan plugin
+SWC yang sama, karena `tsx` adalah CLI wrapper tanpa plugin API).
+
+**Bukti penutupan**: `dist/main.js` build baru: `amount: "not-a-number"` → **400 VALIDATION_ERROR**;
+field asing `unexpected: true` → **400**. `pnpm dev` (dev.mjs baru): skenario yang sama juga
+**400**. Tes regresi permanen ditambahkan di `apps/api/test/build-gate.test.ts` — build produksi
+sungguhan + spawn `node dist/main.js` sungguhan + fetch HTTP asli, bukan `app.inject()` vitest.
+
+### BUG-ESBUILD-2 — Dependency injection constructor tanpa `@Inject()` eksplisit gagal senyap — **TERTUTUP**
+
+**Kondisi**: Constructor parameter yang mengandalkan reflection `design:paramtypes` implisit (yang
+juga butuh `emitDecoratorMetadata`) di-resolve sebagai `undefined` tanpa error saat boot, karena
+akar penyebab yang sama dengan BUG-ESBUILD-1.
+
+**Bukti kondisi awal**: `apps/api/src/modules/channels/channels.controller.ts` — constructor parameter
+kedua `private readonly publisher: RealtimePublisher` (tanpa `@Inject()`) selalu `undefined`;
+`ingestWebhook()` crash `TypeError` di **setiap** webhook channel yang masuk — response 500.
+Audit sistematis lanjutan atas **79 file** constructor di `apps/api/src` menemukan **19 file
+tambahan** dengan pola identik (bukan hanya 1 titik yang dikira semula) — total **20 file**
+terdampak: `advanced-analytics.controller.ts`, `ai-agent.controller.ts`, `attachment.controller.ts`,
+`audit-immutability.controller.ts`, `automation.controller.ts`, `campaign.controller.ts`,
+`channels.controller.ts`, `contact-segment.controller.ts`, `dlq.controller.ts`,
+`enterprise.controller.ts`, `marketplace.controller.ts`, `multi-region.controller.ts`,
+`notification.controller.ts`, `observability.controller.ts`, `partner-ecosystem.controller.ts`,
+`sla.controller.ts`, `template.controller.ts`, `ticket.controller.ts`, `whitelabel.controller.ts`.
+Dibuktikan definitif via `console.log` sementara di `dist/main.js` nyata:
+`CampaignController.repo = undefined` sebelum perbaikan, `InMemoryCampaignRepository {...}` setelah
+`@Inject(CampaignRepository)` ditambahkan.
+
+**Solusi diterapkan**: `@Inject(TokenClass)` eksplisit ditambahkan ke seluruh 20 file. Ditutup
+sekaligus di akarnya bersama BUG-ESBUILD-1 (plugin SWC decorator-metadata di atas juga memulihkan
+`design:paramtypes` untuk DI implisit).
+
+**Catatan sampingan (di luar scope, tidak diperbaiki)**: `TenantGuard` menolak beberapa request
+(mis. `campaign`/`attachment` controller) dengan 401 "Tenant context required" karena Guards
+dieksekusi sebelum Interceptors dalam siklus request NestJS, sehingga `TenantContextInterceptor`
+belum mengisi `request.tenantContext` saat `TenantGuard` dievaluasi untuk kasus tertentu. Ini
+kemungkinan bug arsitektur terpisah, **tidak terkait** bug esbuild, belum diverifikasi lebih lanjut
+— dicatat sebagai temuan potensial untuk fase lain.
+
+**Bukti penutupan**: Typecheck+lint+build `@chai/api` exit 0 setelah seluruh 20 file diperbaiki.
+`pnpm run test:smoke` (Playwright, 89 test): **89/89 lolos** (naik dari 76 lolos/13 gagal sebelum
+FASE 1.5) — seluruh 13 kegagalan yang tersisa di FASE 1 dikonfirmasi berakar pada dua bug ini.
+
+### Keputusan tertunda: webhook JNE tidak ter-wire ke endpoint publik (2026-07-30, FASE 3)
+
+Ditemukan dan didokumentasikan saat menutup REQ-10-016/REQ-09-006/REQ-09-023. Connector
+`packages/connectors/src/connectors/jne/index.ts`'s `handleWebhook(payload: unknown)` **tidak
+punya parameter signature sama sekali** — ini bukan bug implementasi, JNE API memang tidak
+menyediakan mekanisme signature apa pun untuk webhook tracking-nya.
+
+**Keputusan**: JNE **sengaja tidak disambungkan** ke endpoint publik `apps/api`. Membuka rute
+publik untuk provider tanpa signature adalah menciptakan vektor tulis tak terautentikasi baru —
+siapa pun yang menemukan URL webhook bisa mengirim update status pengiriman palsu tanpa cara
+memverifikasi asalnya. Ini berbeda dari Midtrans (yang **sudah** disambungkan lewat
+`POST /service/v1/payments/webhook/:provider`, verifikasi signature SHA-512 wajib, default-closed
+tanpa `MIDTRANS_SERVER_KEY`) — JNE tidak punya signature untuk diverifikasi sama sekali.
+
+**Mitigasi yang dibutuhkan sebelum JNE bisa disambungkan** (keputusan produk/infra, bukan kode
+aplikasi semata): (a) allowlist IP di level infrastruktur (nginx/load balancer) yang membatasi
+rute webhook JNE hanya menerima dari rentang IP resmi JNE, dan (b) rekonsiliasi wajib berkala
+(polling `trackShipment` yang sudah ada di connector) untuk mendeteksi status yang tidak dikonfirmasi
+lewat webhook. Tanpa keduanya, status pengiriman JNE tetap mengandalkan polling manual/berkala,
+bukan webhook real-time — trade-off yang sadar dipilih demi keamanan.
 
 ---
 
@@ -687,7 +916,7 @@ ADR yang dinilai jalur relevan (rencana §4 mewajibkan setiap ADR dinilai):
 | ADR | Ringkas | Jalur | Kondisi |
 |---|---|---|---|
 | ADR-006 | REST + Realtime (SSE) | B | Kontrak ada; event tak terkirim end-to-end (REQ-06-010) |
-| ADR-007 | Inbox/Outbox transaksional | B, C, F | Worker patuh; **jalur webhook payment TIDAK** (REQ-17-009 CRITICAL) |
+| ADR-007 | Inbox/Outbox transaksional | B, C, F | Worker dan jalur webhook payment keduanya patuh (REQ-17-009 TERPENUHI 2026-07-29) |
 | ADR-008 | BullMQ→Temporal | B | HILANG (REQ-07-010/011); diganti Redis Streams + dispatcher DB |
 | ADR-010 | Kontrak AI provider-neutral | D | Kontrak & alias ada, tak ter-wire |
 | ADR-011 | AI Proposes, Policy Executes | A, C, D | Keputusan benar & terjangkau; eksekusi AI tak ter-wire (tak dilanggar) |

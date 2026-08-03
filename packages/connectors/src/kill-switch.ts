@@ -5,8 +5,23 @@ import { randomUUID } from 'node:crypto';
 
 /**
  * Connector provider identifiers.
+ *
+ * `community-channel` is deliberately separate from `channel`: the unofficial
+ * WhatsApp Web gateway (FASE 25) must be quarantined without touching a tenant's
+ * official channel, and vice versa.
+ *
+ * `ai-reply` is not a connector but the automatic AI reply pipeline (FASE 31).
+ * It shares this switch so the env (`KILL_SWITCH_AI_REPLY=1`) and owner-console
+ * layers can halt all automated replies process-wide; the per-tenant per-channel
+ * toggle lives in chai.ai_reply_setting (migration 0096).
  */
-export type KillSwitchProvider = 'payment' | 'channel' | 'logistics' | 'calendar';
+export type KillSwitchProvider =
+  | 'payment'
+  | 'channel'
+  | 'community-channel'
+  | 'logistics'
+  | 'calendar'
+  | 'ai-reply';
 
 /**
  * Kill switch source: where the toggle came from.

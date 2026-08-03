@@ -97,7 +97,8 @@ describe('ConnectorConfigRepository', () => {
       const secret = await repo.createSecret(tenantId, {
         connectorConfigId: config.id,
         secretKey: 'api_key',
-        secretValueEncrypted: Buffer.from('encrypted-value'),
+        secretValueRef: 'v1:tenant-1:api_key:1',
+        secretValueLegacyEncrypted: null,
         secretVersion: 1,
         rotatedAt: null,
         rotatedBy: null,
@@ -126,7 +127,8 @@ describe('ConnectorConfigRepository', () => {
       await repo.createSecret(tenantId, {
         connectorConfigId: config.id,
         secretKey: 'bot_token',
-        secretValueEncrypted: Buffer.from('encrypted'),
+        secretValueRef: 'v1:tenant-1:bot_token:1',
+        secretValueLegacyEncrypted: null,
         secretVersion: 1,
         rotatedAt: null,
         rotatedBy: null,
@@ -134,6 +136,45 @@ describe('ConnectorConfigRepository', () => {
 
       const secrets = await repo.listSecrets(tenantId, config.id);
       expect(secrets).toHaveLength(1);
+    });
+
+    it('rotates a secret, bumping the version and recording rotatedBy', async () => {
+      const config = await repo.createConfig(tenantId, {
+        connectorType: 'whatsapp',
+        connectorProvider: 'twilio',
+        name: 'WhatsApp',
+        description: null,
+        configSchema: {},
+        configValuesEncrypted: null,
+        configHash: 'hash-rot',
+        status: 'active',
+        lastTestedAt: null,
+        lastError: null,
+        createdBy: 'user-1',
+        updatedBy: null,
+      });
+
+      const created = await repo.createSecret(tenantId, {
+        connectorConfigId: config.id,
+        secretKey: 'bot_token',
+        secretValueRef: 'v1:tenant-1:bot_token:1',
+        secretValueLegacyEncrypted: null,
+        secretVersion: 1,
+        rotatedAt: null,
+        rotatedBy: null,
+      });
+
+      const rotated = await repo.rotateSecret(tenantId, created.id, {
+        secretValueRef: 'v1:tenant-1:bot_token:2',
+        secretVersion: 2,
+        rotatedAt: '2026-07-30T00:00:00.000Z',
+        rotatedBy: 'user-1',
+      });
+
+      expect(rotated.secretVersion).toBe(2);
+      expect(rotated.secretValueRef).toBe('v1:tenant-1:bot_token:2');
+      expect(rotated.rotatedBy).toBe('user-1');
+      expect(rotated.rotatedAt).toBe('2026-07-30T00:00:00.000Z');
     });
   });
 });

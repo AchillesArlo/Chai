@@ -36,3 +36,32 @@ groups:
         annotations:
           summary: Inbox queue lag above 5 minutes
           runbook: docs/runbooks/provider-outage.md
+
+  - name: chai-cost-logistics-payments
+    rules:
+      - alert: CostBudgetSpike
+        expr: max by (tenant_id) (chai_ai_budget_burn_ratio) > 0.9
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: AI budget burn rate near or over cap for a tenant
+          runbook: docs/runbooks/cost-spike.md
+
+      - alert: PaymentReconciliationMismatch
+        expr: sum(chai_payment_reconciliation_open) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Open payment reconciliation mismatch present
+          runbook: docs/runbooks/2026-07-31-payment-reconciliation-runbook.md
+
+      - alert: ShipmentTrackingStale
+        expr: max(chai_shipment_tracking_age_seconds) > 86400
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Shipment tracking not updated in over 24h
+          runbook: docs/runbooks/shipment-stale.md

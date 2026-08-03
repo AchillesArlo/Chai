@@ -38,6 +38,7 @@ import { MarketplaceModule } from './modules/marketplace/marketplace.module';
 import { MultiRegionModule } from './modules/multi-region/multi-region.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { ObservabilityModule } from './modules/observability/observability.module';
+import { OrderModule } from './modules/order/order.module';
 import { PartnerEcosystemModule } from './modules/partner-ecosystem/partner-ecosystem.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { QuarantineModule } from './modules/quarantine/quarantine.module';
@@ -51,6 +52,8 @@ import { ConnectorConfigModule } from './modules/connector-config/connector-conf
 import { DlqModule } from './modules/dlq/dlq.module';
 import { ImpersonationModule } from './modules/impersonation/impersonation.module';
 import { AuditImmutabilityModule } from './modules/audit-immutability/audit-immutability.module';
+
+import { AuditMiddleware } from './middleware/audit.middleware';
 
 @Module({
   controllers: [HealthController],
@@ -82,6 +85,7 @@ import { AuditImmutabilityModule } from './modules/audit-immutability/audit-immu
     MultiRegionModule,
     NotificationModule,
     ObservabilityModule,
+    OrderModule,
     PartnerEcosystemModule,
     PaymentsModule,
     QuarantineModule,
@@ -104,6 +108,7 @@ import { AuditImmutabilityModule } from './modules/audit-immutability/audit-immu
     { provide: APP_INTERCEPTOR, useClass: TracingInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyKeyInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: AuditMiddleware },
     { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },
     { provide: APP_FILTER, useClass: ApiErrorFilter },
   ],

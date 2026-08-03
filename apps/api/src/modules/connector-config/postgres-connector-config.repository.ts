@@ -42,7 +42,8 @@ interface ConnectorSecretRow {
   rotated_at: Date | null;
   rotated_by: string | null;
   secret_key: string;
-  secret_value_encrypted: Buffer;
+  secret_value_ref: string | null;
+  secret_value_legacy_encrypted: Buffer | null;
   secret_version: number;
 }
 
@@ -167,13 +168,14 @@ export class PostgresConnectorConfigRepository extends ConnectorConfigRepository
   ): Promise<ConnectorSecret> {
     const id = randomUUID();
     return this.tx(tenantId, async (tx) => {
+      await this.assertConfigOwnedByTenant(tx, tenantId, secret.connectorConfigId);
       const rows = await tx<ConnectorSecretRow[]>`
         INSERT INTO public.connector_secrets (
-          id, connector_config_id, secret_key, secret_value_encrypted,
+          id, connector_config_id, secret_key, secret_value_ref,
           secret_version, rotated_at, rotated_by
         ) VALUES (
           ${id}, ${secret.connectorConfigId}, ${secret.secretKey},
-          ${secret.secretValueEncrypted}, ${secret.secretVersion},
+          ${secret.secretValueRef ?? ''}, ${secret.secretVersion},
           ${secret.rotatedAt}::timestamptz, ${secret.rotatedBy}
         )
         RETURNING *
@@ -182,14 +184,54 @@ export class PostgresConnectorConfigRepository extends ConnectorConfigRepository
     });
   }
 
+  override async rotateSecret(
+    tenantId: string,
+    id: string,
+    update: { secretValueRef: string; secretVersion: number; rotatedAt: string; rotatedBy: string },
+  ): Promise<ConnectorSecret> {
+    return this.tx(tenantId, async (tx) => {
+      const rows = await tx<ConnectorSecretRow[]>`
+        UPDATE public.connector_secrets AS s
+        SET secret_value_ref = ${update.secretValueRef},
+            secret_version = ${update.secretVersion},
+            rotated_at = ${update.rotatedAt}::timestamptz,
+            rotated_by = ${update.rotatedBy}
+        FROM public.connector_configs AS c
+        WHERE s.id = ${id}
+          AND s.connector_config_id = c.id
+          AND c.tenant_id = ${tenantId}::uuid
+        RETURNING s.*
+      `;
+      if (rows.length === 0) throw new Error('Connector secret not found');
+      return mapSecret(rows[0] as ConnectorSecretRow);
+    });
+  }
+
   override async deleteSecret(tenantId: string, id: string): Promise<void> {
     await this.tx(tenantId, async (tx) => {
       const result = await tx`
-        DELETE FROM public.connector_secrets
-        WHERE id = ${id}
+        DELETE FROM public.connector_secrets AS s
+        USING public.connector_configs AS c
+        WHERE s.id = ${id}
+          AND s.connector_config_id = c.id
+          AND c.tenant_id = ${tenantId}::uuid
       `;
       if (result.count === 0) throw new Error('Connector secret not found');
     });
+  }
+
+  private async assertConfigOwnedByTenant(
+    tx: DatabaseTransaction,
+    tenantId: string,
+    configId: string,
+  ): Promise<void> {
+    const rows = await tx`
+      SELECT 1 FROM public.connector_configs
+      WHERE id = ${configId}::uuid AND tenant_id = ${tenantId}::uuid
+    `;
+    if (rows.length === 0) {
+      throw new Error('Connector config not found');
+    }
   }
 
   private async loadConfig(
@@ -246,7 +288,8 @@ function mapSecret(row: ConnectorSecretRow): ConnectorSecret {
     rotatedAt: row.rotated_at ? row.rotated_at.toISOString() : null,
     rotatedBy: row.rotated_by,
     secretKey: row.secret_key,
-    secretValueEncrypted: row.secret_value_encrypted,
+    secretValueRef: row.secret_value_ref,
+    secretValueLegacyEncrypted: row.secret_value_legacy_encrypted,
     secretVersion: row.secret_version,
   };
 }

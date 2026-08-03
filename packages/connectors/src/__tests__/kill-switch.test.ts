@@ -111,6 +111,23 @@ describe('KillSwitchRuntime', () => {
     expect(runtime.isTripped('payment', 'tenant-1')).toBe(false);
     expect(runtime.isTripped('channel')).toBe(false);
   });
+
+  it('trips the community channel independently of the official channel (FASE 25)', () => {
+    // Quarantine tenant-1's community gateway.
+    runtime.setDbToggle('community-channel', 'tenant-1', true);
+
+    expect(runtime.isTripped('community-channel', 'tenant-1')).toBe(true);
+    // The official channel for the same tenant is untouched.
+    expect(runtime.isTripped('channel', 'tenant-1')).toBe(false);
+    // Another tenant's community channel is untouched.
+    expect(runtime.isTripped('community-channel', 'tenant-2')).toBe(false);
+  });
+
+  it('trips the community channel via its own env var', () => {
+    const envRuntime = new KillSwitchRuntime({ KILL_SWITCH_COMMUNITY_CHANNEL: '1' });
+    expect(envRuntime.isTripped('community-channel')).toBe(true);
+    expect(envRuntime.isTripped('channel')).toBe(false);
+  });
 });
 
 describe('KillSwitchRuntime singleton', () => {

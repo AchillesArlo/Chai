@@ -1,3 +1,4 @@
+import { createBrokerClient } from '@chai/broker';
 import { createDatabase, runWithTenantRoster } from '@chai/database';
 
 import {
@@ -6,6 +7,8 @@ import {
   type InboxHandler,
   type InboxHandlerResult,
 } from './index';
+import { runMessageReceivedConsumer } from './message-received-consumer';
+import { runAiReplyConsumer } from './ai-reply-consumer';
 
 /**
  * Honest inbox handler for the standalone dispatcher.
@@ -52,14 +55,22 @@ async function main(): Promise<void> {
   const handler = createInboxHandler();
 
   const database = createDatabase(databaseUrl);
+  const signal = shutdownSignal();
+
+  // The Redis consumer is the production user of RedisStreamsConsumer (FASE 30):
+  // it drains `message.received` and materializes chai.message_fact. It runs
+  // concurrently with the authoritative DB inbox loop and shares the shutdown
+  // signal. Absent REDIS_URL the worker still runs the DB loop, so the broker
+  // stays an optional accelerator rather than a hard dependency.
+  const redisUrl = process.env.REDIS_URL;
 
   try {
-    await runWithTenantRoster({
+    const rosterLoop = runWithTenantRoster({
       database,
       name: 'inbox-dispatcher',
       obsoleteRosterEnv: 'INBOX_TENANT_ROSTER',
       refreshMs,
-      run: ({ signal, tenants }) =>
+      run: ({ signal: runSignal, tenants }) =>
         runInboxDispatcher({
           database,
           handler,
@@ -70,11 +81,27 @@ async function main(): Promise<void> {
             pollIntervalMs,
             retryBackoffMs: 5_000,
           },
-          signal,
+          signal: runSignal,
           tenants,
         }),
-      signal: shutdownSignal(),
+      signal,
     });
+
+    if (redisUrl === undefined || redisUrl === '') {
+      console.warn(
+        'inbox-dispatcher: REDIS_URL not set; message.received fact consumer disabled',
+      );
+      await rosterLoop;
+      return;
+    }
+
+    const redis = createBrokerClient(redisUrl);
+    const messageFactConsumerLoop = runMessageReceivedConsumer({ database, redis, signal });
+    const aiReplyConsumerLoop = runAiReplyConsumer({ database, redis, signal });
+    const consumerLoops = Promise.all([messageFactConsumerLoop, aiReplyConsumerLoop]).finally(
+      () => redis.quit().catch(() => redis.disconnect()),
+    );
+    await Promise.all([rosterLoop, consumerLoops]);
   } finally {
     await database.end();
   }

@@ -69,6 +69,11 @@ class ProcessRefundBody {
   providerRef?: string;
 }
 
+class ResolveReconciliationBody {
+  @IsString()
+  notes!: string;
+}
+
 @Controller('api')
 export class AdvancedPaymentsController {
   constructor(
@@ -85,8 +90,8 @@ export class AdvancedPaymentsController {
     @Body() body: CreateSubscriptionBody,
     @Req() request: FastifyRequest,
   ) {
-    // Recurring mandates are gated the same way as refunds (17_PAYMENT §2.10).
     assertCapabilityEnabled('payment_recurring');
+    assertRecentAuthentication(request);
     return this.repository.createSubscription(tenantScope(request), {
       amountCents: body.amountCents,
       billingCycle: body.billingCycle,
@@ -125,9 +130,6 @@ export class AdvancedPaymentsController {
     @Body() body: ProcessRefundBody,
     @Req() request: FastifyRequest,
   ) {
-    // Refund execution is Critical (17_PAYMENT §2.10, 10_SECURITY §20): it stays
-    // closed until its stage gate passes, and even then the caller must re-prove
-    // its credential.
     assertCapabilityEnabled('payment_refunds');
     assertRecentAuthentication(request);
     return this.repository.processRefund(tenantScope(request), {
@@ -145,5 +147,27 @@ export class AdvancedPaymentsController {
   @RequirePermission('payment.read')
   async listSettlements(@Req() request: FastifyRequest) {
     return this.repository.listSettlements(tenantScope(request));
+  }
+
+  @Get('client/v1/payments/reconciliations')
+  @RequireAudience('client-portal')
+  @RequireEntitlement('payment_orchestration')
+  @RequirePermission('payment.read')
+  async listReconciliations(@Req() request: FastifyRequest) {
+    return this.repository.listReconciliations(tenantScope(request));
+  }
+
+  @Post('client/v1/payments/reconciliations/:id/resolve')
+  @RequireAudience('client-portal')
+  @RequireEntitlement('payment_orchestration')
+  @RequirePermission('payment.manage')
+  @HttpCode(200)
+  async resolveReconciliation(
+    @Param('id') id: string,
+    @Body() body: ResolveReconciliationBody,
+    @Req() request: FastifyRequest,
+  ) {
+    assertRecentAuthentication(request);
+    return this.repository.resolveReconciliation(tenantScope(request), id, body.notes);
   }
 }

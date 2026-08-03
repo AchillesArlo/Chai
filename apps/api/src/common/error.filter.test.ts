@@ -14,6 +14,9 @@ function makeHost(
   captured: CapturedReply,
 ): ArgumentsHost {
   const reply = {
+    header: () => {
+      return reply;
+    },
     send: (body: unknown) => {
       captured.body = body;
       return reply;

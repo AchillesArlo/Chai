@@ -1,6 +1,7 @@
 import {
   createBrokerClient,
   outboxStreamKey,
+  RedisStreamsConsumer,
   RedisStreamsOutboxPublisher,
   type BrokerClient,
 } from '@chai/broker';
@@ -125,5 +126,61 @@ describe('outbox dispatcher — real Redis Streams publisher', () => {
     expect(statuses).toHaveLength(1);
     expect(statuses[0]?.status).toBe('RETRY');
     expect(statuses[0]?.attempts).toBe(1);
+  });
+
+  it('delivers dispatched event to RedisStreamsConsumer with deduplication by eventId (REQ-17-044, REQ-06-010)', async () => {
+    const eventType = 'payment.paid';
+    await seedOutboxEvent(adminDatabaseUrl, WORKER_IDS.outboxOne, eventType);
+
+    await dispatchOnce();
+
+    const streamKey = outboxStreamKey(eventType);
+    const consumer = new RedisStreamsConsumer({
+      consumerName: 'worker-1',
+      group: 'g-payment-consumer',
+      groupStartId: '0',
+      redis,
+      streamKey,
+    });
+    await consumer.ensureGroup();
+
+    const received: string[] = [];
+    const handled = await consumer.pollOnce({
+      blockMs: 100,
+      handler: async (msg) => {
+        received.push(msg.eventId);
+      },
+      minIdleMs: 0,
+    });
+
+    expect(handled).toBe(1);
+    expect(received).toEqual([WORKER_IDS.outboxOne]);
+
+    // Simulate at-least-once redelivery of the same event entry
+    const publisher = new RedisStreamsOutboxPublisher(redis);
+    await publisher.publish({
+      aggregateId: WORKER_IDS.outboxOne,
+      aggregateType: 'payment',
+      aggregateVersion: 1,
+      attempts: 1,
+      eventType,
+      id: WORKER_IDS.outboxOne,
+      partitionKey: WORKER_IDS.outboxOne,
+      payload: { amountCents: 10000 },
+      schemaVersion: 1,
+      tenantId: WORKER_IDS.tenantA,
+      traceparent: null,
+    });
+
+    const secondHandled = await consumer.pollOnce({
+      blockMs: 100,
+      handler: async (msg) => {
+        received.push(msg.eventId);
+      },
+      minIdleMs: 0,
+    });
+
+    expect(secondHandled).toBe(0);
+    expect(received).toEqual([WORKER_IDS.outboxOne]);
   });
 });

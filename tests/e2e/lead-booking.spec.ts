@@ -15,33 +15,40 @@ test.describe('lead booking flow', () => {
       headers: { 'x-test-subject': 'local|client-owner' },
     });
     expect(leadsList.ok()).toBeTruthy();
-    const leads = await leadsList.json();
-    expect(Array.isArray(leads)).toBeTruthy();
+    const leadsBody = await leadsList.json();
+    expect(Array.isArray(leadsBody.data)).toBeTruthy();
 
     // Step 2: Qualify a lead (requires existing lead; if none, skip qualify)
-    if (leads.length > 0) {
-      const leadId = leads[0].id;
+    if (leadsBody.data.length > 0) {
+      const leadId = leadsBody.data[0].id;
       const qualify = await request.patch(
         `${API_BASE}/api/client/v1/leads/${leadId}/qualify`,
         {
-          headers: { 'x-test-subject': 'local|client-owner' },
+          headers: {
+            'Idempotency-Key': `qualify-${Date.now()}`,
+            'x-test-subject': 'local|client-owner',
+          },
           data: { score: 75 },
         },
       );
       expect(qualify.ok()).toBeTruthy();
-      const qualified = await qualify.json();
-      expect(qualified.score).toBe(75);
-      expect(qualified.stage).toBe('QUALIFIED');
+      const qualifiedBody = await qualify.json();
+      expect(qualifiedBody.data.score).toBe(75);
+      expect(qualifiedBody.data.stage).toBe('QUALIFIED');
     }
 
     // Step 3: Book an appointment
     const startsAt = new Date(Date.now() + 86400000).toISOString(); // tomorrow
     const endsAt = new Date(Date.now() + 90000000).toISOString(); // +1h
+    const bookIdempotencyKey = `idem-${Date.now()}`;
     const booking = await request.post(`${API_BASE}/api/client/v1/appointments`, {
-      headers: { 'x-test-subject': 'local|client-owner' },
+      headers: {
+        'Idempotency-Key': bookIdempotencyKey,
+        'x-test-subject': 'local|client-owner',
+      },
       data: {
         contactId: 'contact-001',
-        idempotencyKey: `idem-${Date.now()}`,
+        idempotencyKey: bookIdempotencyKey,
         resourceId: 'resource-001',
         startsAt,
         endsAt,
@@ -49,17 +56,20 @@ test.describe('lead booking flow', () => {
       },
     });
     expect(booking.ok()).toBeTruthy();
-    const appointment = await booking.json();
-    expect(appointment.status).toBe('CONFIRMED');
-    expect(appointment.title).toBe('Follow-up consultation');
-    expect(appointment.contactId).toBe('contact-001');
+    const bookingBody = await booking.json();
+    expect(bookingBody.data.status).toBe('CONFIRMED');
+    expect(bookingBody.data.title).toBe('Follow-up consultation');
+    expect(bookingBody.data.contactId).toBe('contact-001');
 
-    // Step 4: Idempotency - same request returns same appointment
+    // Step 4: Idempotency - same request+key returns the same appointment
     const replay = await request.post(`${API_BASE}/api/client/v1/appointments`, {
-      headers: { 'x-test-subject': 'local|client-owner' },
+      headers: {
+        'Idempotency-Key': bookIdempotencyKey,
+        'x-test-subject': 'local|client-owner',
+      },
       data: {
         contactId: 'contact-001',
-        idempotencyKey: `idem-${Date.now()}`,
+        idempotencyKey: bookIdempotencyKey,
         resourceId: 'resource-001',
         startsAt,
         endsAt,
@@ -74,11 +84,15 @@ test.describe('lead booking flow', () => {
     const endsAt = new Date(Date.now() + 176400000).toISOString(); // +1h
 
     // First booking
+    const firstIdempotencyKey = `conflict-test-${Date.now()}`;
     const first = await request.post(`${API_BASE}/api/client/v1/appointments`, {
-      headers: { 'x-test-subject': 'local|client-owner' },
+      headers: {
+        'Idempotency-Key': firstIdempotencyKey,
+        'x-test-subject': 'local|client-owner',
+      },
       data: {
         contactId: 'contact-002',
-        idempotencyKey: `conflict-test-${Date.now()}`,
+        idempotencyKey: firstIdempotencyKey,
         resourceId: 'resource-002',
         startsAt,
         endsAt,
@@ -95,11 +109,15 @@ test.describe('lead booking flow', () => {
       new Date(endsAt).getTime() + 1800000,
     ).toISOString();
 
+    const conflictIdempotencyKey = `conflict-test-2-${Date.now()}`;
     const conflict = await request.post(`${API_BASE}/api/client/v1/appointments`, {
-      headers: { 'x-test-subject': 'local|client-owner' },
+      headers: {
+        'Idempotency-Key': conflictIdempotencyKey,
+        'x-test-subject': 'local|client-owner',
+      },
       data: {
         contactId: 'contact-003',
-        idempotencyKey: `conflict-test-2-${Date.now()}`,
+        idempotencyKey: conflictIdempotencyKey,
         resourceId: 'resource-002',
         startsAt: overlapStartsAt,
         endsAt: overlapEndsAt,
@@ -108,6 +126,6 @@ test.describe('lead booking flow', () => {
     });
     expect(conflict.status()).toBe(409);
     const body = await conflict.json();
-    expect(body.code ?? body.message?.code).toBe('SLOT_CONFLICT');
+    expect(body.error?.code ?? body.code ?? body.message?.code).toBe('SLOT_CONFLICT');
   });
 });

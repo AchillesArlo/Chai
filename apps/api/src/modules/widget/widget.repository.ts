@@ -47,7 +47,9 @@ export abstract class WidgetRepository {
 
   abstract listSessions(widgetId: string, status?: string): Promise<WidgetSession[]>;
   abstract getSession(id: string): Promise<WidgetSession | null>;
-  abstract createSession(session: Omit<WidgetSession, 'id' | 'endedAt'>): Promise<WidgetSession>;
+  abstract createSession(
+    session: Omit<WidgetSession, 'id' | 'tenantId' | 'endedAt'>,
+  ): Promise<WidgetSession>;
   abstract updateSession(id: string, update: Partial<WidgetSession>): Promise<WidgetSession>;
 }
 
@@ -96,8 +98,17 @@ export class InMemoryWidgetRepository extends WidgetRepository {
     return this.sessions.get(id) || null;
   }
 
-  async createSession(session: Omit<WidgetSession, 'id' | 'endedAt'>): Promise<WidgetSession> {
-    const created = { ...session, id: randomUUID(), endedAt: null };
+  async createSession(
+    session: Omit<WidgetSession, 'id' | 'tenantId' | 'endedAt'>,
+  ): Promise<WidgetSession> {
+    // The tenant is never taken from the caller: it is discovered from the
+    // widget the caller claims to be attaching to, mirroring the SECURITY
+    // DEFINER lookup PostgresWidgetRepository uses (migration 0070). A caller
+    // that names a widgetId it does not own cannot make the session belong to
+    // a different tenant than that widget's.
+    const widget = this.widgets.get(session.widgetId);
+    if (!widget) throw new Error('Widget not found');
+    const created = { ...session, id: randomUUID(), endedAt: null, tenantId: widget.tenantId };
     this.sessions.set(created.id, created);
     return created;
   }

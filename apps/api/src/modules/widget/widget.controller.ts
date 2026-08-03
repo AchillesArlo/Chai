@@ -151,9 +151,6 @@ class CreateWidgetSessionDto {
   @IsIn(WIDGET_SESSION_STATUS)
   status!: (typeof WIDGET_SESSION_STATUS)[number];
 
-  @IsString()
-  tenantId!: string;
-
   @IsOptional()
   @IsString()
   userAgent!: string | null;
