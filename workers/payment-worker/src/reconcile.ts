@@ -255,13 +255,22 @@ async function applyReconciliation(
           applied.id,
         );
         if (applied.invoice_id) {
-          await transaction`
+          const invs = await transaction<{ order_id: string | null }[]>`
             UPDATE chai.invoice
             SET status = 'paid',
                 paid_at = now(),
                 updated_at = now()
             WHERE tenant_id = ${tenant.tenantId} AND id = ${applied.invoice_id}::uuid
+            RETURNING order_id
           `;
+          if (invs[0]?.order_id) {
+            await transaction`
+              UPDATE chai.order
+              SET status = 'confirmed',
+                  updated_at = now()
+              WHERE tenant_id = ${tenant.tenantId} AND id = ${invs[0].order_id}::uuid
+            `;
+          }
         }
         const notifId = randomUUID();
         await transaction`

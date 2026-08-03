@@ -21,8 +21,7 @@ const MEMBERS: MemberRow[] = [
 
 describe('Client Portal team management', () => {
   it('renders the tenant roster and pending invitations from the API', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockUseApiQuery.mockReturnValue({ data: MEMBERS, error: null, isLoading: false } as any);
+    mockUseApiQuery.mockReturnValue({ data: MEMBERS, error: null, isLoading: false } as unknown as ReturnType<typeof useApiQuery>);
 
     render(<TeamManagement />);
 
@@ -38,8 +37,7 @@ describe('Client Portal team management', () => {
   });
 
   it('shows a loading state while the roster is fetched', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockUseApiQuery.mockReturnValue({ data: undefined, error: null, isLoading: true } as any);
+    mockUseApiQuery.mockReturnValue({ data: undefined, error: null, isLoading: true } as unknown as ReturnType<typeof useApiQuery>);
 
     render(<TeamManagement />);
 
